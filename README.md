@@ -1,4 +1,6 @@
-# provable-harness-mpp
+# Provably
+
+Proof-carrying payments for agent commerce.
 
 A **toy provable reseller** built on the [Machine Payments Protocol (MPP)](https://mpp.dev).
 
