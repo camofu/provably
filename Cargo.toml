@@ -1,0 +1,32 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/notary",
+    "crates/mock-anthropic",
+    "crates/reseller",
+    "crates/buyer",
+]
+
+# A provable reseller harness built on the Machine Payments Protocol (MPP).
+#
+# The `mpp` crate is consumed from the sibling checkout at ../mpp-rs (it is also
+# published on crates.io as `mpp = "0.10"`). `tempo` pulls in the Tempo testnet
+# payment method; individual member crates layer `server` / `client` on top.
+[workspace.dependencies]
+mpp = { path = "../mpp-rs", features = ["tempo"] }
+provable-notary = { path = "crates/notary" }
+
+alloy = { version = "2.0", features = ["provider-http"] }
+tempo-alloy = "1.8.0"
+
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+ed25519-dalek = "2"
+sha2 = "0.10"
+base64 = "0.22"
+hex = "0.4"
