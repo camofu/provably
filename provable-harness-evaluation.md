@@ -1,3 +1,13 @@
+> **Status (this analysis has since been acted on).** The MVP is built — see
+> [`README.md`](./README.md). It now runs over **two MPP settlement rails**: one-shot
+> `charge` (`crates/reseller` / `crates/buyer`) and a payment-channel `session`
+> (`crates/reseller-session` / `crates/buyer-session`), sharing one rail-agnostic
+> mock-zkTLS attestation (`crates/notary`). The "condition settlement on a proof"
+> idea below is sketched concretely in
+> [`fair-exchange-voucher-conditioning.md`](./fair-exchange-voucher-conditioning.md),
+> and the vision/strategy framing in [`PITCH.md`](./PITCH.md). The analysis below is
+> the original long-form evaluation, unchanged.
+
 This is a sharp idea, and there's a real thesis under it. Let me give you my honest evaluation — the genuine benefits, and then the parts that are harder than they look (because the hard parts are where this either becomes valuable or becomes theater).
 
 ## The core benefit: it replaces *trust* with *verification* in machine commerce

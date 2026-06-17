@@ -1446,6 +1446,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "buyer-session"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "mpp",
+ "provable-notary",
+ "reqwest",
+ "serde_json",
+ "tempo-alloy",
+ "tokio",
+]
+
+[[package]]
 name = "byte-slice-cast"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3744,6 +3757,20 @@ dependencies = [
 
 [[package]]
 name = "reseller"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "axum",
+ "mpp",
+ "provable-notary",
+ "reqwest",
+ "serde_json",
+ "tempo-alloy",
+ "tokio",
+]
+
+[[package]]
+name = "reseller-session"
 version = "0.1.0"
 dependencies = [
  "alloy",

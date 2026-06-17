@@ -72,12 +72,13 @@ The demo in [`README.md`](./README.md) already implements the core loop end-to-e
 - **Real MPP 402 + on-chain settlement** on the Tempo `moderato` testnet (auto-faucet, no secrets).
 - **Reseller-as-paywall** over an upstream API (`crates/reseller`, `mpp::proxy` + axum), forwarding to a stand-in Anthropic (`crates/mock-anthropic`, one env flip to go real).
 - **An attestation bound to the payment** (`crates/notary`): the response carries a signed commitment over the upstream bytes, and the buyer (`crates/buyer`) **recomputes the digest and rejects on mismatch** — catching model-substitution fraud (`RESELLER_MODE=cheat-substitute`).
+- **Two settlement rails, one rail-agnostic proof:** the same attestation runs over one-shot `charge` (`crates/reseller` / `crates/buyer`) *and* a payment-channel `session` (`crates/reseller-session` / `crates/buyer-session`) — open once, pay per message with off-chain vouchers, verify each response, close once. The proof binds to `receipt.reference` either way (charge tx hash or channel id).
 
 This proves the thesis in miniature: *condition delivery on a proof.* It is **deliberately TEE-first / mock-notary** to be shippable — honesty about that is in the README's "real vs. toy" table. The hardening roadmap:
 
 - **v1 — real zkTLS:** swap the in-process mock notary for an MPC-TLS prover/notary so the reseller *cannot* lie about what crossed the wire (independent witness, not self-reported digests).
 - **v1 — interior proof:** run the harness in an attested confidential VM (TEE) so the *glue* — not just the boundary call — is covered, with the receipt committing `commit(req) · commit(upstream_resp) · commit(output) · attestation_quote`.
-- **v2 — fair exchange:** release the MPP voucher *only* against a valid proof, turning today's post-hoc dispute evidence into atomic settlement.
+- **v2 — fair exchange:** the session rail already gives *bounded-loss + early-cutoff* (a caught reseller earns only the disputed tick); the endgame is releasing the MPP voucher *only* against a valid proof, turning post-hoc dispute evidence into atomic settlement. Design in [`fair-exchange-voucher-conditioning.md`](./fair-exchange-voucher-conditioning.md).
 
 ---
 
@@ -86,7 +87,7 @@ This proves the thesis in miniature: *condition delivery on a proof.* It is **de
 The credibility is in naming these, not hiding them:
 
 - **Notary trust (today).** The MVP notary is in-process and self-reported — a malicious reseller could lie to it. Real zkTLS removes that with an independent witness. *(This is the headline gap between the demo and the thesis.)*
-- **Payment-before-verification.** The buyer verifies *after* paying, so the proof is post-hoc evidence. True fair-exchange (settlement conditioned on the proof) is the next step.
+- **Payment-before-verification.** The buyer verifies *after* paying. The session rail narrows this to bounded-loss + early-cutoff (lose one tick, refuse the rest), but vouchers are still up-front; settlement conditioned *on* the proof (deliver-then-pay) is the next step.
 - **Streaming.** zkTLS over token-by-token SSE is genuinely awkward; pay-per-token + proof needs design work.
 - **Proof economics.** MPC-TLS adds seconds + bandwidth; zkVM is heavier. Proofs only pencil out **above a stakes threshold** — useless on a $0.05 call, trivial on a $50 decision-grade one.
 - **Trust-base trade-off.** TEE = cheap but trusts a hardware vendor's root + side-channel posture. zkVM = pure crypto but expensive. No free lunch.

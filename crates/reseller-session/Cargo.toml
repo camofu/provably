@@ -1,0 +1,22 @@
+[package]
+name = "reseller-session"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "reseller-session"
+path = "src/main.rs"
+
+[dependencies]
+# `client` is needed for channel_ops::default_escrow_contract (same as the SDK's
+# session example, which imports it from mpp::client).
+mpp = { workspace = true, features = ["server", "client"] }
+provable-notary = { workspace = true }
+
+alloy = { workspace = true }
+tempo-alloy = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
