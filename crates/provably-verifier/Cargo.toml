@@ -1,0 +1,9 @@
+[package]
+name = "provably-verifier"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "The receipt verifier: binds a HarnessReceipt to a pinned Expectation and emits one Check per assertion."
+
+[dependencies]
+provably-core = { workspace = true }

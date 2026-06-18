@@ -7,4 +7,5 @@ description = "Conventions binding a HarnessReceipt to MPP settlement: advertise
 
 [dependencies]
 provably-core = { workspace = true }
+provably-verifier = { workspace = true }
 serde_json = { workspace = true }

@@ -1440,6 +1440,7 @@ dependencies = [
  "mpp",
  "provably-core",
  "provably-mpp",
+ "provably-verifier",
  "reqwest",
  "serde_json",
  "tempo-alloy",
@@ -1454,6 +1455,7 @@ dependencies = [
  "mpp",
  "provably-core",
  "provably-mpp",
+ "provably-verifier",
  "reqwest",
  "serde_json",
  "tempo-alloy",
@@ -3497,6 +3499,7 @@ name = "provably-mpp"
 version = "0.1.0"
 dependencies = [
  "provably-core",
+ "provably-verifier",
  "serde_json",
 ]
 
@@ -3515,6 +3518,13 @@ dependencies = [
  "hex",
  "provably-core",
  "sha2 0.10.9",
+]
+
+[[package]]
+name = "provably-verifier"
+version = "0.1.0"
+dependencies = [
+ "provably-core",
 ]
 
 [[package]]

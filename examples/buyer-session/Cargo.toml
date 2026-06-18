@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 mpp = { workspace = true, features = ["client"] }
 provably-core = { workspace = true }
+provably-verifier = { workspace = true }
 provably-mpp = { workspace = true }
 
 # sol-types + contract for the IERC20 balance poll (faucet confirmation).

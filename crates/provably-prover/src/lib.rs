@@ -1,12 +1,12 @@
 //! `provably-prover` — interior node provers.
 //!
 //! A prover describes how the interior transform is attested, producing an
-//! [`Interior`] for the [`HarnessReceipt`](provably_core::HarnessReceipt). Today
-//! only [`Recompute`] (the cheapest: no proof — the verifier re-runs the public
-//! transform). The expensive backends — a zkVM (RISC Zero / SP1), a proof-of-
-//! inference scheme (CommitLLM / zkML), or a TEE — slot in behind the same
-//! [`Prover`] trait, each emitting its own `Interior` variant and committing the
-//! leg digests + output so `provably-core::verify` can bind them.
+//! [`InteriorProof`] for the [`HarnessReceipt`](provably_core::HarnessReceipt). Today
+//! only [`Recompute`](InteriorProof::Recompute) (the cheapest: no proof — the verifier
+//! re-runs the public transform). The expensive backends — a zkVM (RISC Zero / SP1), a
+//! proof-of-inference scheme (CommitLLM / zkML), or a TEE — slot in behind the same
+//! [`Prover`] trait, each emitting its own `InteriorProof` variant and committing the
+//! leg digests + output so `provably-verifier::verify` can bind them.
 
 use provably_core::InteriorProof;
 

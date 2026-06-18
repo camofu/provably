@@ -7,9 +7,10 @@
 //! 2. [`PROVABLY_RECEIPT_HEADER`] — the sidecar header the bundle rides in, beside
 //!    the standard `Payment-Receipt` (the canonical `Receipt` is spec-locked, so the
 //!    proof can't live inside it — it's bound to it via `payment_reference`).
-//! 3. [`gate`] — condition delivery/settlement on `provably_core::verify` passing.
+//! 3. [`gate`] — condition delivery/settlement on `provably_verifier::verify` passing.
 
-use provably_core::{verify, Expectation, HarnessReceipt, Manifest, VerifyError};
+use provably_core::{HarnessReceipt, Manifest, VerifyError};
+use provably_verifier::{verify, Expectation};
 use serde_json::{json, Value};
 
 /// Response header carrying the base64url-encoded [`HarnessReceipt`] bundle.

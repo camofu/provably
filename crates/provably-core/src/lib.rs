@@ -14,13 +14,13 @@
 //! is a non-breaking addition. They're deliberately *not* pre-declared here: their
 //! shape should be designed against the real backend, not guessed.
 //!
-//! The binding everywhere is digest-equality, enforced in [`verify`].
+//! The binding everywhere is digest-equality, enforced by the verifier in the
+//! separate `provably-verifier` crate.
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
 
 const DOMAIN: &[u8] = b"provably/leg-attestation/v1";
 
@@ -151,125 +151,15 @@ impl HarnessReceipt {
     }
 }
 
-// ===================== verification =====================
+// ===================== manifest (pinned commitment) =====================
 
-/// The public commitment a buyer/contract pins out-of-band.
+/// The public commitment a buyer/contract pins out-of-band. The verifier
+/// (`provably-verifier`) checks a receipt against this.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
     pub id: String,
     /// Hosts the leg nodes are allowed to come from.
     pub hosts: Vec<String>,
-}
-
-/// What the verifier expects.
-pub struct Expectation<'a> {
-    pub manifest: &'a Manifest,
-    /// Pinned trusted notary key for notary-proven legs (`None` = don't pin).
-    pub notary_pubkey: Option<&'a str>,
-    /// SHA-256 (hex) of the bytes the buyer was actually served.
-    pub served_output_digest: &'a str,
-    /// The MPP receipt reference the bundle must be bound to.
-    pub payment_reference: &'a str,
-    /// For `Recompute` interior nodes: `(node_id, digest)` the buyer obtained by
-    /// re-running the transform.
-    pub recomputed: &'a [(NodeId, String)],
-}
-
-/// One named verifier check.
-#[derive(Debug, Clone)]
-pub struct Check {
-    pub name: String,
-    pub passed: bool,
-}
-
-impl Check {
-    fn new(name: impl Into<String>, passed: bool) -> Self {
-        Self {
-            name: name.into(),
-            passed,
-        }
-    }
-}
-
-/// Verify a harness receipt against the pinned manifest + per-call expectation.
-/// Returns a [`Check`] per assertion so callers can show their work.
-pub fn verify(receipt: &HarnessReceipt, expect: &Expectation) -> Vec<Check> {
-    let mut checks = vec![Check::new(
-        "manifest matches",
-        receipt.manifest_id == expect.manifest.id,
-    )];
-
-    let map: HashMap<&str, &Node> = receipt.nodes.iter().map(|n| (n.id.as_str(), n)).collect();
-
-    // Delivered-output binding: the sold node's output == what the buyer received.
-    match map.get(receipt.output_node.as_str()) {
-        Some(out) => checks.push(Check::new(
-            "delivered bytes match output node",
-            out.output_digest == expect.served_output_digest,
-        )),
-        None => checks.push(Check::new("output node exists", false)),
-    }
-
-    // Payment binding.
-    checks.push(Check::new(
-        "bound to this payment",
-        receipt.payment_reference.as_deref() == Some(expect.payment_reference),
-    ));
-
-    // Walk every node.
-    for node in &receipt.nodes {
-        // Edges resolve.
-        for inp in &node.inputs {
-            checks.push(Check::new(
-                format!("node {} input {inp} resolves", node.id),
-                map.contains_key(inp.as_str()),
-            ));
-        }
-
-        match &node.proof {
-            NodeProof::Leg(att) => {
-                checks.push(Check::new(
-                    format!("node {} leg proof valid", node.id),
-                    att.verify_proof().is_ok(),
-                ));
-                checks.push(Check::new(
-                    format!("node {} host allowed ({})", node.id, att.claim.host),
-                    expect.manifest.hosts.iter().any(|h| h == &att.claim.host),
-                ));
-                checks.push(Check::new(
-                    format!("node {} output == leg response", node.id),
-                    node.output_digest == att.claim.response_digest,
-                ));
-                if let Some(pin) = expect.notary_pubkey {
-                    checks.push(Check::new(
-                        format!("node {} notary key matches pinned", node.id),
-                        att.notary_pubkey() == Some(pin),
-                    ));
-                }
-            }
-            NodeProof::Interior(ip) => match ip {
-                InteriorProof::Recompute { .. } => {
-                    match expect
-                        .recomputed
-                        .iter()
-                        .find(|(id, _)| id == &node.id)
-                        .map(|(_, d)| d.as_str())
-                    {
-                        Some(d) => checks.push(Check::new(
-                            format!("node {} recompute matches", node.id),
-                            d == node.output_digest,
-                        )),
-                        None => checks.push(Check::new(
-                            format!("node {} recompute NOT re-verified (no recomputer)", node.id),
-                            false,
-                        )),
-                    }
-                }
-            },
-        }
-    }
-
-    checks
 }
 
 // ===================== errors =====================

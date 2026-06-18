@@ -3,6 +3,7 @@ resolver = "2"
 # Library crates (the framework) live in crates/; runnable demos in examples/.
 members = [
     "crates/provably-core",
+    "crates/provably-verifier",
     "crates/provably-transport",
     "crates/provably-prover",
     "crates/provably-mpp",
@@ -22,6 +23,7 @@ members = [
 mpp = { path = "../mpp-rs", features = ["tempo"] }
 
 provably-core = { path = "crates/provably-core" }
+provably-verifier = { path = "crates/provably-verifier" }
 provably-transport = { path = "crates/provably-transport" }
 provably-prover = { path = "crates/provably-prover" }
 provably-mpp = { path = "crates/provably-mpp" }

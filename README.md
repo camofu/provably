@@ -32,7 +32,8 @@ The framework is split so the proof layer is payment- and backend-agnostic:
 
 | Crate | Role |
 |---|---|
-| `provably-core` | The IP: `LegClaim`/`LegAttestation`, `Node`/`HarnessReceipt`, `Manifest`, and `verify()`. No payment, no transport, no proving backend. |
+| `provably-core` | The IP: `LegClaim`/`LegAttestation`, `Node`/`HarnessReceipt`, `Manifest`, `sha256_hex`. Types only — no payment, transport, proving, or verification backend. |
+| `provably-verifier` | The verifier: `verify()` + the `Expectation`/`Check` types. Cheap today (Ed25519 + digests); heavier backend verifiers grow here so `core` stays a pure type crate. |
 | `provably-transport` | Leg attesters behind an `Attester` trait — `notary` (toy) today; `zktls`/`tee` next. |
 | `provably-prover` | Interior provers behind a `Prover` trait — `Recompute` today; zkVM/inference/TEE next. |
 | `provably-mpp` | Binds a `HarnessReceipt` to MPP settlement: advertise the manifest in the 402 challenge, attach the bundle (`X-Provably-Receipt`), and `gate()` delivery on `verify()`. |
