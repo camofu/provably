@@ -23,26 +23,6 @@ testnet. The zkTLS layer is a mock notary (see [what's real vs. toy](#whats-real
                   delivered bytes == notarized output ✓ · bound to this payment ✓
 ```
 
-## What's real vs. toy
-
-| Piece | Status |
-|---|---|
-| MPP 402 challenge / credential / receipt flow | **real** (`mpp` SDK) |
-| On-chain settlement | **real** — Tempo `moderato` testnet, auto-faucet, no secrets |
-| Both payment rails (one-shot charge **and** payment-channel vouchers) | **real** |
-| Proof-carrying receipt + verifier | **real** (`provably-core`) |
-| zkTLS notary | **mocked** — an Ed25519 signature stands in for a real TLS proof |
-| Upstream LLM | **mocked** by default (`mock-llm-api`); one env flip to call real Anthropic |
-
-**The mock, honestly:** a real zkTLS notary (TLSNotary / MPC-TLS) *independently
-witnesses* the TLS session so the seller can't lie about what crossed the wire. The
-toy notary is simply handed the request/response digests and signs them. The part
-that survives — and is the actual point — is the **verifier-side binding**: the buyer
-recomputes the digest of the bytes it was served and compares it to what was
-notarized. Swap a cheap model's output for the notarized one and the digests diverge,
-so the buyer catches it. Swapping the notary for a real zkTLS prover touches only
-`provably-transport`; everything else is unchanged.
-
 ## Architecture
 
 A harness's output is described by a **`HarnessReceipt`** — a DAG of nodes:
@@ -157,27 +137,6 @@ otherwise fetched from the reseller for demo convenience).
 ```bash
 ANTHROPIC_API_KEY=sk-ant-... UPSTREAM_URL=https://api.anthropic.com cargo run --bin reseller
 ```
-
-## Design notes & honest limits
-
-- **The verifier replaces trust, but only for *execution*, not *quality*.** A passing
-  receipt proves the bytes really came from the upstream, unmodified, bound to this
-  payment. It says nothing about whether the answer is *good* — that stays the model's
-  job. It also can't stop *indirect prompt injection* carried in upstream data; it
-  makes such things attributable, not impossible.
-- **Payment happens before verification.** On the charge rail the proof is post-hoc
-  evidence (for dispute / slashing); the session rail narrows this to bounded-loss +
-  early-cutoff. True deliver-then-pay fair exchange is a streaming follow-up.
-- **The node DAG is built but barely used.** Today's harness is a single-leg
-  passthrough; the same types model multi-leg, multi-interior harnesses (e.g. a
-  private-RAG node between two LLM calls). The heavier backends — zkTLS/TEE leg proofs,
-  zkVM/inference interior proofs, folding a leg into a zkVM (one-proof / on-chain
-  verification), and recursive agent-to-agent sub-receipts — are non-breaking enum
-  extensions, deliberately not pre-declared (their shape should be designed against the
-  real backend). A version with those hooks sketched in lives on the **`node-dag-full`**
-  branch.
-- `verify()` stays in `provably-core` while it's cheap (Ed25519 + digests); the heavy
-  backend verifiers should move to their own crates so `core` stays light.
 
 ## License
 
