@@ -1,0 +1,12 @@
+[package]
+name = "provably-transport"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Leg attesters: the Attester trait + backends (notary today; zkTLS/TEE next)."
+
+[dependencies]
+provably-core = { workspace = true }
+ed25519-dalek = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }

@@ -1,16 +1,29 @@
-//! The provable reseller, **session / voucher rail** (parallel to `reseller`).
+//! The **provable reseller harness**.
 //!
-//! Same provable-harness idea as the charge-based `reseller`, but settlement is a
-//! Tempo payment channel: the buyer opens a channel once (one on-chain deposit),
-//! pays per message with off-chain signed vouchers (no gas per call), and closes
-//! once to settle. Each response still carries the MPP receipt + the (toy) zkTLS
-//! attestation, so the proof layer is identical and rail-agnostic — it binds to
-//! `receipt.reference`, which here is the channel id instead of a charge tx hash.
+//! A payment-gated proxy in front of Anthropic. A buyer pays for `POST
+//! /anthropic/v1/messages` over MPP (HTTP 402, settled on the Tempo testnet); the
+//! reseller verifies the payment, forwards the request upstream, and returns the
+//! response together with:
 //!
-//! Env knobs mirror `reseller`: RPC_URL, UPSTREAM_URL, UPSTREAM_HOST,
-//! ANTHROPIC_API_KEY, NOTARY_SEED, RESELLER_MODE (honest | cheat-substitute).
+//!   * `Payment-Receipt`        — the MPP receipt (Tempo tx hash)
+//!   * `X-Zktls-Attestation`    — a (toy) zkTLS attestation that the bytes came
+//!                                from `api.anthropic.com`, bound to that receipt
 //!
-//! Run: `cargo run --bin reseller-session`  (listens on :3000)
+//! This is the thesis in miniature: *condition delivery on a proof*. The buyer can
+//! verify it got genuine upstream output and was not sold a substituted cheaper
+//! model — without trusting the reseller.
+//!
+//! Env knobs:
+//!   RPC_URL            Tempo RPC (default moderato testnet)
+//!   MPP_SECRET_KEY     server secret for stateless challenge ids
+//!   PRICE              price per call, human units (default "0.05")
+//!   UPSTREAM_URL       where to forward (default http://localhost:4000, the mock)
+//!   UPSTREAM_HOST      TLS server name to attest (default api.anthropic.com)
+//!   ANTHROPIC_API_KEY  if set, injects x-api-key + anthropic-version (real upstream)
+//!   NOTARY_SEED        deterministic notary key seed (default "demo-notary-key")
+//!   RESELLER_MODE      "honest" (default) | "cheat-substitute" (demo fraud)
+//!
+//! Run: `cargo run --bin reseller`  (listens on :3000)
 
 use alloy::primitives::B256;
 use alloy::providers::{Provider, ProviderBuilder};
@@ -22,26 +35,18 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use mpp::client::channel_ops::default_escrow_contract;
-use mpp::server::{
-    tempo, Mpp, SessionChallengeOptions, SessionChannelStore, SessionMethodConfig,
-    TempoChargeMethod, TempoConfig, TempoSessionMethod,
-};
-use mpp::{parse_authorization, PrivateKeySigner};
-use provable_notary::{sha256_hex, Notary, TranscriptCommitment};
+use mpp::server::{tempo, Mpp, TempoChargeMethod, TempoConfig};
+use mpp::{format_www_authenticate, parse_authorization, PrivateKeySigner};
+use provably_core::{sha256_hex, HarnessReceipt, Interior, LegClaim};
+use provably_mpp::PROVABLY_RECEIPT_HEADER;
+use provably_transport::Notary;
 use std::sync::Arc;
 use tempo_alloy::TempoNetwork;
 
-const CHAIN_ID: u64 = 42431;
-/// 0.05 pathUSD per message, in 6-decimal base units.
-const AMOUNT_PER_REQUEST: &str = "50000";
-/// 1.0 pathUSD suggested channel deposit (~20 messages before top-up).
-const SUGGESTED_DEPOSIT: &str = "1000000";
+type Payment = Mpp<TempoChargeMethod<mpp::server::TempoProvider>>;
 
-type PaymentHandler = Mpp<
-    TempoChargeMethod<mpp::server::TempoProvider>,
-    TempoSessionMethod<mpp::server::TempoProvider>,
->;
+/// The harness this reseller serves: a single-leg passthrough of the upstream LLM.
+const MANIFEST_ID: &str = "passthrough-llm-v1";
 
 #[derive(Clone, Copy, PartialEq)]
 enum Mode {
@@ -50,12 +55,13 @@ enum Mode {
 }
 
 struct App {
-    payment: PaymentHandler,
+    payment: Payment,
     notary: Notary,
     http: reqwest::Client,
     upstream_url: String,
     upstream_host: String,
     api_key: Option<String>,
+    price: String,
     mode: Mode,
 }
 
@@ -68,49 +74,34 @@ async fn main() {
     let upstream_host =
         std::env::var("UPSTREAM_HOST").unwrap_or_else(|_| "api.anthropic.com".to_string());
     let api_key = std::env::var("ANTHROPIC_API_KEY").ok();
+    let price = std::env::var("PRICE").unwrap_or_else(|_| "0.05".to_string());
     let notary_seed = std::env::var("NOTARY_SEED").unwrap_or_else(|_| "demo-notary-key".to_string());
     let mode = match std::env::var("RESELLER_MODE").as_deref() {
         Ok("cheat-substitute") => Mode::CheatSubstitute,
         _ => Mode::Honest,
     };
 
+    // The reseller's wallet — where buyer payments land. Fund it on the testnet.
     let signer = PrivateKeySigner::random();
-    let recipient = format!("{:#x}", signer.address());
-
-    // Fund the reseller wallet (it pays gas for channel open/close as fee payer).
-    let faucet =
+    let recipient = format!("{}", signer.address());
+    let provider =
         ProviderBuilder::new_with_network::<TempoNetwork>().connect_http(rpc_url.parse().unwrap());
-    let _: Vec<B256> = faucet
+    let _: Vec<B256> = provider
         .raw_request("tempo_fundAddress".into(), (signer.address(),))
         .await
         .expect("faucet funding failed");
 
-    let base = Mpp::create(
+    let payment = Mpp::create(
         tempo(TempoConfig {
             recipient: &recipient,
         })
         .rpc_url(&rpc_url)
         .secret_key(
             &std::env::var("MPP_SECRET_KEY")
-                .unwrap_or_else(|_| "reseller-session-secret".to_string()),
+                .unwrap_or_else(|_| "reseller-example-secret".to_string()),
         ),
     )
     .expect("failed to create payment handler");
-
-    let rpc_provider = mpp::server::tempo_provider(&rpc_url).expect("failed to create provider");
-    let store = Arc::new(SessionChannelStore::new());
-    let session_method = TempoSessionMethod::new(
-        rpc_provider,
-        store,
-        SessionMethodConfig {
-            escrow_contract: default_escrow_contract(CHAIN_ID).unwrap(),
-            chain_id: CHAIN_ID,
-            min_voucher_delta: 0,
-        },
-    )
-    .with_close_signer(signer);
-
-    let payment = base.with_session_method(session_method);
 
     let notary = Notary::from_seed(&notary_seed);
     let notary_pubkey = notary.public_key_hex();
@@ -122,6 +113,7 @@ async fn main() {
         upstream_url: upstream_url.clone(),
         upstream_host: upstream_host.clone(),
         api_key,
+        price: price.clone(),
         mode,
     });
 
@@ -135,17 +127,17 @@ async fn main() {
         .await
         .expect("bind");
 
-    println!("provable reseller [SESSION / voucher rail] listening on http://localhost:3000");
+    println!("provable reseller listening on http://localhost:3000");
     println!("  recipient wallet : {recipient}");
     println!("  notary pubkey    : {notary_pubkey}");
     println!("  upstream         : {upstream_url}  (attested as {upstream_host})");
-    println!("  price / message  : {AMOUNT_PER_REQUEST} base units (0.05 pathUSD), off-chain voucher");
+    println!("  price            : {price}");
     println!(
         "  mode             : {}",
         if mode == Mode::Honest {
             "honest"
         } else {
-            "CHEAT-SUBSTITUTE (sells tampered bytes — buyer should detect & cut off)"
+            "CHEAT-SUBSTITUTE (will sell tampered bytes — buyer should detect it)"
         }
     );
     axum::serve(listener, app).await.expect("serve");
@@ -156,40 +148,26 @@ async fn notary_pubkey_route(State(st): State<Arc<App>>) -> impl IntoResponse {
 }
 
 async fn messages(State(st): State<Arc<App>>, headers: HeaderMap, body: Bytes) -> Response {
-    let credential = match headers
+    // 1. Require a valid MPP payment, or hand back a 402 challenge.
+    let receipt = match headers
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
         .and_then(|s| parse_authorization(s).ok())
     {
-        Some(c) => c,
-        None => return session_challenge(&st),
+        Some(credential) => match st.payment.verify_credential(&credential).await {
+            Ok(receipt) => receipt,
+            Err(e) => {
+                return (
+                    StatusCode::PAYMENT_REQUIRED,
+                    Json(serde_json::json!({ "error": e.to_string() })),
+                )
+                    .into_response()
+            }
+        },
+        None => return challenge(&st),
     };
 
-    let result = match st.payment.verify_session(&credential).await {
-        Ok(r) => r,
-        Err(e) => {
-            return (
-                StatusCode::PAYMENT_REQUIRED,
-                Json(serde_json::json!({ "error": e.to_string() })),
-            )
-                .into_response()
-        }
-    };
-
-    // Channel management (open / close / top-up): return the SDK's response as-is.
-    if let Some(mgmt) = result.management_response {
-        let receipt_header = result.receipt.to_header().unwrap_or_default();
-        return (
-            StatusCode::OK,
-            [("payment-receipt", receipt_header)],
-            Json(mgmt),
-        )
-            .into_response();
-    }
-
-    // Content request: the voucher covered this message → forward upstream & attest.
-    let channel_id = result.receipt.reference.clone();
-
+    // 2. Forward upstream (the leg a real zkTLS notary would witness).
     let mut req = st
         .http
         .post(format!("{}/v1/messages", st.upstream_url))
@@ -213,19 +191,27 @@ async fn messages(State(st): State<Arc<App>>, headers: HeaderMap, body: Bytes) -
     let status = upstream.status();
     let upstream_body = upstream.bytes().await.unwrap_or_default();
 
-    // Bind the attestation to the channel (payment_reference = channel id).
-    let commitment = TranscriptCommitment {
-        server_name: st.upstream_host.clone(),
+    // 3. Attest the *genuine* leg and bundle a single-leg passthrough receipt,
+    //    bound to this payment via the MPP receipt reference.
+    let leg = st.notary.attest(LegClaim {
+        host: st.upstream_host.clone(),
         method: "POST".into(),
         path: "/v1/messages".into(),
         request_digest: sha256_hex(&body),
         response_digest: sha256_hex(&upstream_body),
         response_status: status.as_u16(),
-        timestamp: result.receipt.timestamp.clone(),
-        payment_reference: Some(channel_id),
+        timestamp: receipt.timestamp.clone(),
+    });
+    let harness_receipt = HarnessReceipt {
+        manifest_id: MANIFEST_ID.into(),
+        legs: vec![leg],
+        interior: Interior::Passthrough,
+        output_digest: sha256_hex(&upstream_body),
+        payment_reference: Some(receipt.reference.clone()),
     };
-    let attestation = st.notary.notarize(commitment);
 
+    // 4. In cheat mode, sell tampered bytes while the receipt still commits to the
+    //    real output — exactly the model-substitution fraud the buyer must catch.
     let delivered = match st.mode {
         Mode::Honest => upstream_body.to_vec(),
         Mode::CheatSubstitute => substitute(&upstream_body),
@@ -234,32 +220,20 @@ async fn messages(State(st): State<Arc<App>>, headers: HeaderMap, body: Bytes) -
     Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .header("payment-receipt", result.receipt.to_header().unwrap_or_default())
-        .header("x-zktls-attestation", attestation.to_header())
-        .header("x-notary-pubkey", st.notary.public_key_hex())
+        .header("payment-receipt", receipt.to_header().unwrap_or_default())
+        .header(PROVABLY_RECEIPT_HEADER, harness_receipt.to_header())
         .body(Body::from(delivered))
         .expect("valid response")
 }
 
-/// 402 with a Tempo **session** challenge (channel deposit + per-message price).
-fn session_challenge(st: &App) -> Response {
-    let currency = st.payment.currency().unwrap();
-    let recipient = st.payment.recipient().unwrap();
-    match st.payment.session_challenge_with_details(
-        AMOUNT_PER_REQUEST,
-        currency,
-        recipient,
-        SessionChallengeOptions {
-            unit_type: Some("message"),
-            suggested_deposit: Some(SUGGESTED_DEPOSIT),
-            ..Default::default()
-        },
-    ) {
-        Ok(ch) => match ch.to_header() {
-            Ok(h) => (
+/// Build the 402 Payment Required response with a fresh charge challenge.
+fn challenge(st: &App) -> Response {
+    match st.payment.charge(&st.price) {
+        Ok(challenge) => match format_www_authenticate(&challenge) {
+            Ok(www_auth) => (
                 StatusCode::PAYMENT_REQUIRED,
-                [(header::WWW_AUTHENTICATE, h)],
-                "Payment required",
+                [(header::WWW_AUTHENTICATE, www_auth)],
+                Json(serde_json::json!({ "error": "Payment Required" })),
             )
                 .into_response(),
             Err(e) => server_error(e.to_string()),
@@ -268,7 +242,7 @@ fn session_challenge(st: &App) -> Response {
     }
 }
 
-/// Replace model + text with a cheaper substitute, leaving valid JSON.
+/// Replace the model and text with a cheaper substitute, leaving valid JSON.
 fn substitute(real: &[u8]) -> Vec<u8> {
     match serde_json::from_slice::<serde_json::Value>(real) {
         Ok(mut v) => {

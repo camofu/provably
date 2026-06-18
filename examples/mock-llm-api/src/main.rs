@@ -7,7 +7,7 @@
 //! To point the reseller at the real Anthropic instead, set `UPSTREAM_URL` and
 //! `ANTHROPIC_API_KEY` on the reseller — this binary is then unused.
 //!
-//! Run: `cargo run --bin mock-anthropic`  (listens on :4000)
+//! Run: `cargo run --bin mock-llm-api`  (listens on :4000)
 
 use axum::{extract::Json, http::StatusCode, response::IntoResponse, routing::post, Router};
 use serde_json::{json, Value};
@@ -17,7 +17,7 @@ async fn main() {
     let app = Router::new().route("/v1/messages", post(messages));
     let addr = "0.0.0.0:4000";
     let listener = tokio::net::TcpListener::bind(addr).await.expect("bind");
-    println!("mock-anthropic (pretending to be api.anthropic.com) listening on http://{addr}");
+    println!("mock-llm-api (pretending to be api.anthropic.com) listening on http://{addr}");
     axum::serve(listener, app).await.expect("serve");
 }
 

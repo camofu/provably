@@ -10,7 +10,9 @@ path = "src/main.rs"
 
 [dependencies]
 mpp = { workspace = true, features = ["server"] }
-provable-notary = { workspace = true }
+provably-core = { workspace = true }
+provably-transport = { workspace = true }
+provably-mpp = { workspace = true }
 
 alloy = { workspace = true }
 tempo-alloy = { workspace = true }

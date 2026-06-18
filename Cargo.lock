@@ -1438,7 +1438,8 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "mpp",
- "provable-notary",
+ "provably-core",
+ "provably-mpp",
  "reqwest",
  "serde_json",
  "tempo-alloy",
@@ -1451,7 +1452,8 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "mpp",
- "provable-notary",
+ "provably-core",
+ "provably-mpp",
  "reqwest",
  "serde_json",
  "tempo-alloy",
@@ -2994,7 +2996,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mock-anthropic"
+name = "mock-llm-api"
 version = "0.1.0"
 dependencies = [
  "axum",
@@ -3479,7 +3481,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "provable-notary"
+name = "provably-core"
 version = "0.1.0"
 dependencies = [
  "base64",
@@ -3487,6 +3489,31 @@ dependencies = [
  "hex",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "provably-mpp"
+version = "0.1.0"
+dependencies = [
+ "provably-core",
+ "serde_json",
+]
+
+[[package]]
+name = "provably-prover"
+version = "0.1.0"
+dependencies = [
+ "provably-core",
+]
+
+[[package]]
+name = "provably-transport"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "hex",
+ "provably-core",
  "sha2 0.10.9",
 ]
 
@@ -3762,7 +3789,9 @@ dependencies = [
  "alloy",
  "axum",
  "mpp",
- "provable-notary",
+ "provably-core",
+ "provably-mpp",
+ "provably-transport",
  "reqwest",
  "serde_json",
  "tempo-alloy",
@@ -3776,7 +3805,9 @@ dependencies = [
  "alloy",
  "axum",
  "mpp",
- "provable-notary",
+ "provably-core",
+ "provably-mpp",
+ "provably-transport",
  "reqwest",
  "serde_json",
  "tempo-alloy",

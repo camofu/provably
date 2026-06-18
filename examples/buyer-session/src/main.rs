@@ -12,7 +12,7 @@
 //! voucher" interleave is the streaming/SSE Tier-1 in
 //! `fair-exchange-voucher-conditioning.md`.)
 //!
-//! Run (after mock-anthropic + reseller-session):
+//! Run (after mock-llm-api + reseller-session):
 //!   cargo run --bin buyer-session
 //!   cargo run --bin buyer-session -- "prompt one" "prompt two"
 //!
@@ -23,7 +23,8 @@ use alloy::providers::{Provider, ProviderBuilder};
 use alloy::sol;
 use mpp::client::{Fetch, TempoSessionProvider};
 use mpp::{parse_receipt, PrivateKeySigner};
-use provable_notary::{sha256_hex, verify, Attestation, Expectation};
+use provably_core::{sha256_hex, verify, Expectation, Interior, Manifest};
+use provably_mpp::{read_receipt_header, PROVABLY_RECEIPT_HEADER};
 use reqwest::Client;
 use tempo_alloy::TempoNetwork;
 
@@ -146,7 +147,7 @@ async fn main() {
 
         let status = resp.status();
         let receipt_hdr = header(&resp, "payment-receipt");
-        let att_hdr = header(&resp, "x-zktls-attestation");
+        let bundle_hdr = header(&resp, PROVABLY_RECEIPT_HEADER);
         let body = resp.bytes().await.unwrap_or_default();
 
         if !status.is_success() {
@@ -162,8 +163,8 @@ async fn main() {
             }
         };
 
-        let attestation = match att_hdr.as_deref().map(Attestation::from_header) {
-            Some(Ok(a)) => a,
+        let harness_receipt = match bundle_hdr.as_deref().map(read_receipt_header) {
+            Some(Ok(r)) => r,
             _ => {
                 // Channel-open / management response: no content this round.
                 if !open_seen {
@@ -179,13 +180,19 @@ async fn main() {
             .map(|v| v["model"].to_string())
             .unwrap_or_default();
         let served_digest = sha256_hex(&body);
+        let manifest = Manifest {
+            id: "passthrough-llm-v1".into(),
+            hosts: vec![expected_upstream.clone()],
+            interior: Interior::Passthrough,
+        };
         let checks = verify(
-            &attestation,
+            &harness_receipt,
             &Expectation {
-                notary_pubkey: &pinned_pubkey,
-                server_name: &expected_upstream,
-                served_body_digest: &served_digest,
+                manifest: &manifest,
+                notary_pubkey: Some(&pinned_pubkey),
+                served_output_digest: &served_digest,
                 payment_reference: &receipt.reference,
+                recomputed_output_digest: None,
             },
         );
         let ok = checks.iter().all(|c| c.passed);

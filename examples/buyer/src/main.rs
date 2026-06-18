@@ -9,7 +9,7 @@
 //!      (this is what catches model substitution), and
 //!   4. the attestation is bound to the payment we just made.
 //!
-//! Run (after starting mock-anthropic + reseller):
+//! Run (after starting mock-llm-api + reseller):
 //!   cargo run --bin buyer
 //!   cargo run --bin buyer -- "summarize zkTLS in one line"
 //!
@@ -20,7 +20,8 @@ use alloy::primitives::B256;
 use alloy::providers::{Provider, ProviderBuilder};
 use mpp::client::{Fetch, TempoProvider};
 use mpp::{parse_receipt, PrivateKeySigner};
-use provable_notary::{sha256_hex, verify, Attestation, Expectation};
+use provably_core::{sha256_hex, verify, Expectation, Interior, Manifest};
+use provably_mpp::{read_receipt_header, PROVABLY_RECEIPT_HEADER};
 use reqwest::Client;
 use tempo_alloy::TempoNetwork;
 
@@ -87,7 +88,7 @@ async fn main() {
 
     let status = resp.status();
     let receipt_hdr = header(&resp, "payment-receipt");
-    let att_hdr = header(&resp, "x-zktls-attestation");
+    let bundle_hdr = header(&resp, PROVABLY_RECEIPT_HEADER);
     let body = resp.bytes().await.expect("read body");
 
     println!("status: {status}\n");
@@ -108,21 +109,28 @@ async fn main() {
         .expect("missing/invalid payment receipt");
     println!("payment tx   : {}", receipt.reference);
 
-    let attestation = att_hdr
+    let harness_receipt = bundle_hdr
         .as_deref()
-        .map(Attestation::from_header)
-        .expect("missing zkTLS attestation")
-        .expect("malformed zkTLS attestation");
+        .map(read_receipt_header)
+        .expect("missing provably receipt")
+        .expect("malformed provably receipt");
 
-    // The verification that replaces trust.
+    // The verification that replaces trust. The buyer pins the manifest it expects:
+    // a single-leg passthrough from `expected_upstream`.
+    let manifest = Manifest {
+        id: "passthrough-llm-v1".into(),
+        hosts: vec![expected_upstream.clone()],
+        interior: Interior::Passthrough,
+    };
     let served_digest = sha256_hex(&body);
     let checks = verify(
-        &attestation,
+        &harness_receipt,
         &Expectation {
-            notary_pubkey: &pinned_pubkey,
-            server_name: &expected_upstream,
-            served_body_digest: &served_digest,
+            manifest: &manifest,
+            notary_pubkey: Some(&pinned_pubkey),
+            served_output_digest: &served_digest,
             payment_reference: &receipt.reference,
+            recomputed_output_digest: None,
         },
     );
 

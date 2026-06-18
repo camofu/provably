@@ -1,12 +1,16 @@
 [workspace]
 resolver = "2"
+# Library crates (the framework) live in crates/; runnable demos in examples/.
 members = [
-    "crates/notary",
-    "crates/mock-anthropic",
-    "crates/reseller",
-    "crates/buyer",
-    "crates/reseller-session",
-    "crates/buyer-session",
+    "crates/provably-core",
+    "crates/provably-transport",
+    "crates/provably-prover",
+    "crates/provably-mpp",
+    "examples/mock-llm-api",
+    "examples/reseller",
+    "examples/buyer",
+    "examples/reseller-session",
+    "examples/buyer-session",
 ]
 
 # A provable reseller harness built on the Machine Payments Protocol (MPP).
@@ -16,7 +20,11 @@ members = [
 # payment method; individual member crates layer `server` / `client` on top.
 [workspace.dependencies]
 mpp = { path = "../mpp-rs", features = ["tempo"] }
-provable-notary = { path = "crates/notary" }
+
+provably-core = { path = "crates/provably-core" }
+provably-transport = { path = "crates/provably-transport" }
+provably-prover = { path = "crates/provably-prover" }
+provably-mpp = { path = "crates/provably-mpp" }
 
 alloy = { version = "2.0", features = ["provider-http"] }
 tempo-alloy = "1.8.0"

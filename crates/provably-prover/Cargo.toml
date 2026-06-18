@@ -1,0 +1,9 @@
+[package]
+name = "provably-prover"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Interior node provers: the Prover trait + Recompute (zkVM/inference/TEE next)."
+
+[dependencies]
+provably-core = { workspace = true }

@@ -1,11 +1,11 @@
 [package]
-name = "mock-anthropic"
+name = "mock-llm-api"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
 [[bin]]
-name = "mock-anthropic"
+name = "mock-llm-api"
 path = "src/main.rs"
 
 [dependencies]

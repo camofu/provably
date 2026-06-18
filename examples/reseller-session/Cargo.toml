@@ -12,7 +12,9 @@ path = "src/main.rs"
 # `client` is needed for channel_ops::default_escrow_contract (same as the SDK's
 # session example, which imports it from mpp::client).
 mpp = { workspace = true, features = ["server", "client"] }
-provable-notary = { workspace = true }
+provably-core = { workspace = true }
+provably-transport = { workspace = true }
+provably-mpp = { workspace = true }
 
 alloy = { workspace = true }
 tempo-alloy = { workspace = true }

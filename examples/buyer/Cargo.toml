@@ -1,19 +1,19 @@
 [package]
-name = "buyer-session"
+name = "buyer"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
 [[bin]]
-name = "buyer-session"
+name = "buyer"
 path = "src/main.rs"
 
 [dependencies]
 mpp = { workspace = true, features = ["client"] }
-provable-notary = { workspace = true }
+provably-core = { workspace = true }
+provably-mpp = { workspace = true }
 
-# sol-types + contract for the IERC20 balance poll (faucet confirmation).
-alloy = { workspace = true, features = ["sol-types", "contract"] }
+alloy = { workspace = true }
 tempo-alloy = { workspace = true }
 reqwest = { workspace = true }
 tokio = { workspace = true }
