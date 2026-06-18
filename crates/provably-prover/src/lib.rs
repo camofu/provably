@@ -8,11 +8,11 @@
 //! [`Prover`] trait, each emitting its own `Interior` variant and committing the
 //! leg digests + output so `provably-core::verify` can bind them.
 
-use provably_core::Interior;
+use provably_core::InteriorProof;
 
 /// Describes the interior attestation a harness node produces.
 pub trait Prover {
-    fn interior(&self) -> Interior;
+    fn interior(&self) -> InteriorProof;
 }
 
 /// A publicly-recomputable transform. No proof is produced; the verifier re-runs
@@ -31,8 +31,8 @@ impl Recompute {
 }
 
 impl Prover for Recompute {
-    fn interior(&self) -> Interior {
-        Interior::Recompute {
+    fn interior(&self) -> InteriorProof {
+        InteriorProof::Recompute {
             fn_id: self.fn_id.clone(),
         }
     }

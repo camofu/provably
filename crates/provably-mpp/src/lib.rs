@@ -23,7 +23,6 @@ pub fn advertise(manifest: &Manifest) -> Value {
         "provably": {
             "manifestId": manifest.id,
             "hosts": manifest.hosts,
-            "interior": manifest.interior,
         }
     })
 }

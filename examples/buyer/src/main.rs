@@ -20,7 +20,7 @@ use alloy::primitives::B256;
 use alloy::providers::{Provider, ProviderBuilder};
 use mpp::client::{Fetch, TempoProvider};
 use mpp::{parse_receipt, PrivateKeySigner};
-use provably_core::{sha256_hex, verify, Expectation, Interior, Manifest};
+use provably_core::{sha256_hex, verify, Expectation, Manifest};
 use provably_mpp::{read_receipt_header, PROVABLY_RECEIPT_HEADER};
 use reqwest::Client;
 use tempo_alloy::TempoNetwork;
@@ -120,7 +120,6 @@ async fn main() {
     let manifest = Manifest {
         id: "passthrough-llm-v1".into(),
         hosts: vec![expected_upstream.clone()],
-        interior: Interior::Passthrough,
     };
     let served_digest = sha256_hex(&body);
     let checks = verify(
@@ -130,7 +129,7 @@ async fn main() {
             notary_pubkey: Some(&pinned_pubkey),
             served_output_digest: &served_digest,
             payment_reference: &receipt.reference,
-            recomputed_output_digest: None,
+            recomputed: &[],
         },
     );
 
