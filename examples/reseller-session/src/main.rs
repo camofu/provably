@@ -28,7 +28,7 @@ use mpp::server::{
     TempoChargeMethod, TempoConfig, TempoSessionMethod,
 };
 use mpp::{parse_authorization, PrivateKeySigner};
-use provably_core::{sha256_hex, HarnessReceipt, LegClaim, Node, NodeAttestation, NodeProof};
+use provably_core::{sha256_hex, HarnessReceipt, LegClaim, Node, NodeProof};
 use provably_mpp::PROVABLY_RECEIPT_HEADER;
 use provably_transport::Notary;
 use std::sync::Arc;
@@ -234,7 +234,7 @@ async fn messages(State(st): State<Arc<App>>, headers: HeaderMap, body: Bytes) -
             id: "leg0".into(),
             inputs: vec![],
             output_digest: sha256_hex(&upstream_body),
-            attestation: NodeAttestation::Standalone(NodeProof::Leg(leg)),
+            proof: NodeProof::Leg(leg),
         }],
         output_node: "leg0".into(),
         payment_reference: Some(channel_id),

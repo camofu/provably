@@ -3,20 +3,16 @@
 //! A harness is a directed acyclic graph of [`Node`]s wired by `inputs` (edges).
 //! Each node's output is justified by a [`NodeProof`]:
 //!
-//! - [`NodeProof::Leg`] — an external call (transport-attested: notary today;
-//!   zkTLS/TEE next).
-//! - [`NodeProof::Interior`] — the harness's own computation
-//!   ([`InteriorProof`]: recompute today; zk/TEE/inference next).
-//! - [`NodeProof::SubReceipt`] — **recursion / agent-to-agent**: the node's output
-//!   is *another agent's whole [`HarnessReceipt`]*.
+//! - [`NodeProof::Leg`] — an external call (transport-attested).
+//! - [`NodeProof::Interior`] — the harness's own computation ([`InteriorProof`]).
 //!
-//! North-star hooks baked into the types (not yet exercised by the toy):
-//! - **One-proof / fold zkTLS into the zkVM:** a node can be
-//!   [`NodeAttestation::Folded`] into another node whose proof *subsumes* it (see
-//!   `subsumes` on [`InteriorProof::Zk`]/[`InteriorProof::Tee`]). The verifier then
-//!   skips the folded node's standalone check and relies on the covering proof.
-//! - **Recursion:** [`NodeProof::SubReceipt`] lets a verified sub-agent receipt be a
-//!   node here, so receipts compose (Proof-Carrying Data).
+//! Today the only leg proof is the toy notary signature, and the only interior
+//! proof is [`InteriorProof::Recompute`] (the verifier re-runs a public transform).
+//! The bigger backends — zkTLS/TEE leg proofs, zkVM/inference interior proofs,
+//! folding a leg's proof into a zkVM (one-proof / verify-in-circuit), and recursive
+//! agent-to-agent sub-receipts — are **new enum variants when implemented**, which
+//! is a non-breaking addition. They're deliberately *not* pre-declared here: their
+//! shape should be designed against the real backend, not guessed.
 //!
 //! The binding everywhere is digest-equality, enforced in [`verify`].
 
@@ -62,7 +58,7 @@ impl LegClaim {
     }
 }
 
-/// How a [`LegClaim`] is proven. Extensible (zkTLS/TEE become variants).
+/// How a [`LegClaim`] is proven. New variants (zkTLS, TEE) extend this.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LegProof {
@@ -104,33 +100,7 @@ impl LegAttestation {
 pub enum InteriorProof {
     /// Public, cheap transform: no proof — the verifier re-runs `fn_id`.
     Recompute { fn_id: String },
-    /// zkVM proof of `output = f(inputs)`. `subsumes` lists node ids whose proofs
-    /// were folded into this one (e.g. a zkTLS leg verified in-circuit) — those
-    /// nodes are marked [`NodeAttestation::Folded`] and skipped standalone.
-    Zk {
-        vk: String,
-        proof: String,
-        #[serde(default)]
-        subsumes: Vec<NodeId>,
-    },
-    /// TEE-attested computation (handles nondeterminism / whole-program); also may
-    /// `subsumes` folded nodes.
-    Tee {
-        measurement: String,
-        quote: String,
-        #[serde(default)]
-        subsumes: Vec<NodeId>,
-    },
-    // Inference { model, proof, subsumes } — self-hosted LLM, later.
-}
-
-impl InteriorProof {
-    fn subsumes(&self) -> &[NodeId] {
-        match self {
-            InteriorProof::Zk { subsumes, .. } | InteriorProof::Tee { subsumes, .. } => subsumes,
-            InteriorProof::Recompute { .. } => &[],
-        }
-    }
+    // zk / TEE / inference proofs extend this as new variants when implemented.
 }
 
 // ===================== the node DAG =====================
@@ -142,19 +112,8 @@ pub enum NodeProof {
     Leg(LegAttestation),
     /// The harness's own computation.
     Interior(InteriorProof),
-    /// Recursion / agent-to-agent: another agent's whole receipt stands in for this
-    /// node's output.
-    SubReceipt(Box<HarnessReceipt>),
-}
-
-/// Whether a node is checked on its own, or folded into another node's proof.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum NodeAttestation {
-    /// Verified directly by [`verify`].
-    Standalone(NodeProof),
-    /// Subsumed by node `into`'s proof (one-proof / zkTLS-in-zkVM / recursion fold).
-    /// Not checked standalone; the covering proof must list this node in `subsumes`.
-    Folded { into: NodeId },
+    // Recursion (an agent-to-agent sub-receipt) and folded-into-another-proof nodes
+    // extend the node model here when implemented.
 }
 
 /// One node of the harness DAG.
@@ -165,7 +124,7 @@ pub struct Node {
     pub inputs: Vec<NodeId>,
     /// SHA-256 (hex) of this node's output.
     pub output_digest: String,
-    pub attestation: NodeAttestation,
+    pub proof: NodeProof,
 }
 
 /// The proof-carrying bundle: the whole node DAG, the node that's sold, and the
@@ -267,98 +226,50 @@ pub fn verify(receipt: &HarnessReceipt, expect: &Expectation) -> Vec<Check> {
             ));
         }
 
-        match &node.attestation {
-            // Folded: covered by `into`'s proof — verify the fold is consistent and
-            // skip the standalone proof (the zkTLS-in-zkVM / recursion hook).
-            NodeAttestation::Folded { into } => {
-                let ok = map
-                    .get(into.as_str())
-                    .map(|t| node_subsumes(t, &node.id))
-                    .unwrap_or(false);
+        match &node.proof {
+            NodeProof::Leg(att) => {
                 checks.push(Check::new(
-                    format!("node {} folded into {into} (consistent)", node.id),
-                    ok,
+                    format!("node {} leg proof valid", node.id),
+                    att.verify_proof().is_ok(),
                 ));
-            }
-            NodeAttestation::Standalone(proof) => match proof {
-                NodeProof::Leg(att) => {
+                checks.push(Check::new(
+                    format!("node {} host allowed ({})", node.id, att.claim.host),
+                    expect.manifest.hosts.iter().any(|h| h == &att.claim.host),
+                ));
+                checks.push(Check::new(
+                    format!("node {} output == leg response", node.id),
+                    node.output_digest == att.claim.response_digest,
+                ));
+                if let Some(pin) = expect.notary_pubkey {
                     checks.push(Check::new(
-                        format!("node {} leg proof valid", node.id),
-                        att.verify_proof().is_ok(),
+                        format!("node {} notary key matches pinned", node.id),
+                        att.notary_pubkey() == Some(pin),
                     ));
-                    checks.push(Check::new(
-                        format!("node {} host allowed ({})", node.id, att.claim.host),
-                        expect.manifest.hosts.iter().any(|h| h == &att.claim.host),
-                    ));
-                    checks.push(Check::new(
-                        format!("node {} output == leg response", node.id),
-                        node.output_digest == att.claim.response_digest,
-                    ));
-                    if let Some(pin) = expect.notary_pubkey {
-                        checks.push(Check::new(
-                            format!("node {} notary key matches pinned", node.id),
-                            att.notary_pubkey() == Some(pin),
-                        ));
-                    }
                 }
-                NodeProof::Interior(ip) => match ip {
-                    InteriorProof::Recompute { .. } => {
-                        match expect
-                            .recomputed
-                            .iter()
-                            .find(|(id, _)| id == &node.id)
-                            .map(|(_, d)| d.as_str())
-                        {
-                            Some(d) => checks.push(Check::new(
-                                format!("node {} recompute matches", node.id),
-                                d == node.output_digest,
-                            )),
-                            None => checks.push(Check::new(
-                                format!("node {} recompute NOT re-verified (no recomputer)", node.id),
-                                false,
-                            )),
-                        }
-                    }
-                    // Reserved north-star backends — fail closed until a verifier is
-                    // wired, so an unproven node can never pass.
-                    InteriorProof::Zk { .. } | InteriorProof::Tee { .. } => {
-                        checks.push(Check::new(
-                            format!("node {} interior proof requires a wired verifier", node.id),
-                            false,
-                        ));
-                    }
-                },
-                NodeProof::SubReceipt(child) => {
-                    // Recursion: the child's sold output must equal this node's output.
-                    let child_out = child
-                        .nodes
+            }
+            NodeProof::Interior(ip) => match ip {
+                InteriorProof::Recompute { .. } => {
+                    match expect
+                        .recomputed
                         .iter()
-                        .find(|n| n.id == child.output_node)
-                        .map(|n| n.output_digest.as_str());
-                    checks.push(Check::new(
-                        format!("node {} sub-receipt output binds", node.id),
-                        child_out == Some(node.output_digest.as_str()),
-                    ));
-                    // Full recursive policy verification (child manifest/key) is a
-                    // north-star step — fail closed for now.
-                    checks.push(Check::new(
-                        format!("node {} sub-receipt full verification (pending)", node.id),
-                        false,
-                    ));
+                        .find(|(id, _)| id == &node.id)
+                        .map(|(_, d)| d.as_str())
+                    {
+                        Some(d) => checks.push(Check::new(
+                            format!("node {} recompute matches", node.id),
+                            d == node.output_digest,
+                        )),
+                        None => checks.push(Check::new(
+                            format!("node {} recompute NOT re-verified (no recomputer)", node.id),
+                            false,
+                        )),
+                    }
                 }
             },
         }
     }
 
     checks
-}
-
-/// Does `target`'s interior proof declare that it subsumes node `id`?
-fn node_subsumes(target: &Node, id: &str) -> bool {
-    matches!(
-        &target.attestation,
-        NodeAttestation::Standalone(NodeProof::Interior(ip)) if ip.subsumes().iter().any(|s| s == id)
-    )
 }
 
 // ===================== errors =====================
