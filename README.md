@@ -9,19 +9,9 @@ billed for (model-substitution fraud), fabricate the answer, or skip the work.
 
 **Provably** attaches a verifiable **proof of how the result was produced** to the MPP
 payment receipt. The seller's harness proves the response genuinely came from the
-upstream it claims (e.g. `api.anthropic.com`, unmodified); the buyer **verifies that
+upstream it claims (e.g. `api.anthropic.com`, unmodified), and how such response is 
+modified by the agent is transparent to the buyer; the buyer **verifies that
 proof before trusting the output** — catching fraud without trusting the seller.
-
-This repo is a working **toy** of that idea, end-to-end on the Tempo `moderato`
-testnet. The zkTLS layer is a mock notary (see [what's real vs. toy](#whats-real-vs-toy)).
-
-```
- buyer ──── pay via MPP 402 (real Tempo testnet) ───▶ reseller ──forward──▶ upstream LLM
-   ▲                                                     │  (attested as api.anthropic.com)
-   └──── { response · Payment-Receipt · X-Provably-Receipt } ──┘
- buyer verifies:  notary proof ✓ · pinned key ✓ · allowed host ✓
-                  delivered bytes == notarized output ✓ · bound to this payment ✓
-```
 
 ## Architecture
 
