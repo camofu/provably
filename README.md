@@ -9,75 +9,93 @@ billed for (model-substitution fraud), fabricate the answer, or skip the work.
 
 **Provably** attaches a verifiable **proof of how the result was produced** to the MPP
 payment receipt. The seller's harness proves the response genuinely came from the
-upstream it claims (e.g. `api.anthropic.com`, unmodified), and how such response is 
-modified by the agent is transparent to the buyer; the buyer **verifies that
+upstream it claims (e.g. `api.anthropic.com`, unmodified); the buyer **verifies that
 proof before trusting the output** — catching fraud without trusting the seller.
+
+The transport proof is real **[TLSNotary](https://tlsnotary.org)** (proxy mode): a
+separate notary process witnesses the seller's TLS session to the upstream and signs
+what crossed the wire. Settlement is real MPP on the Tempo `moderato` testnet.
 
 ## Architecture
 
 A harness's output is described by a **`HarnessReceipt`** — a DAG of nodes:
 
-- **leg** nodes = external calls (transport-attested: the toy notary today; zkTLS/TEE
-  later),
+- **leg** nodes = external calls, transport-attested by the notary,
 - **interior** nodes = the harness's own computation (`Recompute` today — the verifier
   re-runs a public transform; zkVM / proof-of-inference / TEE later),
 
 wired by `inputs` (edges) and bound together by **digest-equality**. The receipt is
 bound to the MPP payment via the payment reference, and the buyer checks it against a
-pinned **`Manifest`** (which hosts are allowed, which harness spec). Today's toy
-harness is the simplest DAG: a **single-leg passthrough** (forward one upstream call,
-prove it).
+pinned **`Manifest`** (which hosts are allowed, which harness spec). Today's harness is
+the simplest DAG: a **single-leg passthrough** (forward one upstream call, prove it).
+
+### How the leg proof works (interactive-verify + re-sign)
+
+The seller is the TLSNotary **Prover**; it cannot attest a leg alone. It routes its
+upstream TLS call **through a separate `notary` process** (the `tlsn/notary` crate), which:
+
+1. proxies the encrypted traffic to the real server (**proxy mode** — no MPC, so it's
+   fast and works against TLS 1.3 servers),
+2. cryptographically verifies the TLS session and the server certificate,
+3. signs the witnessed `LegClaim` (Ed25519) with a key the seller does **not** hold.
+
+The buyer pins that notary key and verifies the signature + digests. Because the seller
+never holds the key and the notary really observed the bytes, the seller can't forge the
+leg. The notary is *trusted for privacy* (proxy mode discloses the request/response to
+it); the end-game is to run it as an independent third party or inside a **TEE**.
 
 The framework is split so the proof layer is payment- and backend-agnostic:
 
 | Crate | Role |
 |---|---|
 | `provably-core` | The IP: `LegClaim`/`LegAttestation`, `Node`/`HarnessReceipt`, `Manifest`, `sha256_hex`. Types only — no payment, transport, proving, or verification backend. |
-| `provably-verifier` | The verifier: `verify()` + the `Expectation`/`Check` types. Cheap today (Ed25519 + digests); heavier backend verifiers grow here so `core` stays a pure type crate. |
-| `provably-transport` | Leg attesters behind an `Attester` trait — `notary` (toy) today; `zktls`/`tee` next. |
+| `provably-verifier` | The verifier: `verify()` + the `Expectation`/`Check` types (Ed25519 + digest checks). |
+| `provably-transport` | The notary's Ed25519 signing identity (`Notary`); the signature is verified in `provably-verifier`. |
 | `provably-prover` | Interior provers behind a `Prover` trait — `Recompute` today; zkVM/inference/TEE next. |
 | `provably-mpp` | Binds a `HarnessReceipt` to MPP settlement: advertise the manifest in the 402 challenge, attach the bundle (`X-Provably-Receipt`), and `gate()` delivery on `verify()`. |
 
-Examples (runnable demos, in `examples/`):
+The TLSNotary integration lives in one **isolated workspace** `tlsn/` (it pulls the
+alpha `tlsn`/`mpz` MPC tree, kept out of the core `cargo build --workspace` and pinned
+to rustc 1.96 via `rust-toolchain.toml`; both members share it, so `tlsn` builds once):
 
-| Bin | Role |
+| Crate | Role |
 |---|---|
-| `mock-llm-api` | Stand-in for `api.anthropic.com`; serves a canned `POST /v1/messages`. |
-| `reseller` / `buyer` | **charge rail** — pay one-shot, attach + verify the receipt. |
-| `reseller-session` / `buyer-session` | **session rail** — one payment channel, per-message vouchers, verify each response, close once. |
+| `tlsn/notary` | The third-party notary: proxies + verifies the TLS session, then signs the `LegClaim`. |
+| `tlsn/reseller` | The seller, as the TLSNotary Prover: payment gate + drives the upstream call through the notary. |
+| `examples/buyer` | The paying agent / verifier. Pays the reseller, then runs `verify()` before trusting the output. |
 
 The `mpp` crate is consumed from a sibling checkout at `../mpp-rs` (also published as
 `mpp = "0.10"` on crates.io).
 
-## Run the demo
+## Run
 
-Needs Rust and network access to `rpc.moderato.tempo.xyz` (testnet faucet + RPC).
+The core workspace builds fast and tlsn-free:
 
 ```bash
 cargo build --workspace
 ```
 
-### Charge rail (one-shot)
+The charge-rail demo needs three processes plus a real TLS upstream (Anthropic is the
+example here). The `tlsn/` workspace builds from its own dir (so its rustc-1.96 pin
+applies):
 
 ```bash
-cargo run --bin mock-llm-api                                   # terminal 1
-cargo run --bin reseller                                       # terminal 2 (auto-funds from faucet)
-cargo run --bin buyer -- "What is the Machine Payments Protocol?"   # terminal 3
+# 1. the notary — proxies + witnesses + signs (listens :7047)
+cd tlsn/notary && cargo run
+
+# 2. the reseller-prover — payment gate + TLSNotary Prover (listens :3000)
+cd tlsn/reseller && \
+  UPSTREAM_HOST=api.anthropic.com \
+  UPSTREAM_API_KEY=sk-ant-... \
+  UPSTREAM_HEADERS="anthropic-version: 2023-06-01" \
+  cargo run
+
+# 3. the buyer — pays, then verifies the proof (core workspace)
+cargo run --bin buyer -- "What is the Machine Payments Protocol?"
 ```
 
-Honest run — every check passes:
-
-```
-proof verification:
-  [PASS] manifest matches
-  [PASS] delivered bytes match output node
-  [PASS] bound to this payment
-  [PASS] node leg0 leg proof valid
-  [PASS] node leg0 host allowed (api.anthropic.com)
-  [PASS] node leg0 output == leg response
-  [PASS] node leg0 notary key matches pinned
-✅ VERIFIED — output provably served by api.anthropic.com, bound to payment 0x…
-```
+An honest run passes every check; the buyer prints `✅ VERIFIED — output provably
+served by api.anthropic.com, bound to payment 0x…`.
 
 ### Fraud detection
 
@@ -85,7 +103,9 @@ Restart the reseller in cheat mode — it sells tampered bytes while the receipt
 commits to the real upstream output:
 
 ```bash
-RESELLER_MODE=cheat-substitute cargo run --bin reseller
+cd tlsn/reseller && RESELLER_MODE=cheat-substitute \
+  UPSTREAM_HOST=api.anthropic.com UPSTREAM_API_KEY=sk-ant-... \
+  UPSTREAM_HEADERS="anthropic-version: 2023-06-01" cargo run
 cargo run --bin buyer
 ```
 
@@ -96,38 +116,28 @@ served model : "claude-haiku-cheap-substitute"
    dispute the payment or slash the reseller's bond.
 ```
 
-### Session rail (payment channel + vouchers)
-
-Same mock upstream; swap in the session pair. The buyer opens one channel, pays each
-message with an off-chain voucher (no per-call gas), verifies every response, and
-closes once.
-
-```bash
-cargo run --bin mock-llm-api          # terminal 1
-cargo run --bin reseller-session      # terminal 2
-cargo run --bin buyer-session         # terminal 3  (or pass your own prompts)
-```
-
-Fraud on the session rail is *bounded-loss + early-cutoff*: the buyer detects the bad
-message and **stops the session**, so the reseller earns only the one disputed tick,
-not the rest.
-
 ## Configuration (env)
 
-**reseller / reseller-session:** `RPC_URL`, `MPP_SECRET_KEY`, `PRICE` (charge only),
-`UPSTREAM_URL` (default `http://localhost:4000`), `UPSTREAM_HOST` (the attested name,
-default `api.anthropic.com`), `ANTHROPIC_API_KEY`, `NOTARY_SEED`, `RESELLER_MODE`
-(`honest` | `cheat-substitute`).
+**tlsn/reseller:** `RPC_URL`, `MPP_SECRET_KEY`, `PRICE`, `NOTARY_ADDR` (default
+`127.0.0.1:7047`), `UPSTREAM_HOST` (required, the attested name — e.g.
+`api.anthropic.com`), `UPSTREAM_API_KEY` (held by the reseller, redacted from the
+disclosed transcript), `UPSTREAM_HEADERS` (extra request headers, `"Name: Value; …"`),
+`NOTARY_SEED` (only to expose `/notary/pubkey`), `RESELLER_MODE` (`honest` |
+`cheat-substitute`).
 
-**buyer / buyer-session:** `RPC_URL`, `RESELLER_URL` (default `http://localhost:3000`),
+**tlsn/notary:** `NOTARY_LISTEN` (default `0.0.0.0:7047`), `UPSTREAM_HOST` /
+`UPSTREAM_PORT` (default `api.anthropic.com:443`), `NOTARY_SEED`.
+
+**buyer:** `RPC_URL`, `RESELLER_URL` (default `http://localhost:3000`),
 `EXPECTED_UPSTREAM` (default `api.anthropic.com`), `NOTARY_PUBKEY` (pin out-of-band;
 otherwise fetched from the reseller for demo convenience).
 
-### Going real against Anthropic
+## Status
 
-```bash
-ANTHROPIC_API_KEY=sk-ant-... UPSTREAM_URL=https://api.anthropic.com cargo run --bin reseller
-```
+The charge rail (notary + reseller-prover + buyer) is built; full end-to-end validation
+against real Anthropic through TLSNotary proxy mode is the current milestone. The
+**session rail** (payment channel + per-message vouchers) is next — a `reseller-session-tlsn`
+prover over the same proof layer.
 
 ## License
 

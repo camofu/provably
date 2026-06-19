@@ -1,10 +1,9 @@
-//! `tls-notary` — the third-party TLSNotary **proxy + notary** (proxy mode).
+//! `notary` — the third-party TLSNotary **proxy + notary** (proxy mode).
 //!
-//! This is the separate party that turns a self-attestation into a real proof.
-//! In the toy, the reseller signed its own [`LegClaim`] with a key it controlled,
-//! so "trust the proof" collapsed to "trust the reseller." Here the reseller is
-//! the TLSNotary *Prover* and must route its upstream TLS call **through this
-//! process**, which:
+//! This is the separate party that makes a leg proof trustless. Without it, a
+//! reseller could sign its own [`LegClaim`] with a key it controls, so "trust the
+//! proof" collapses to "trust the reseller." Here the reseller is the TLSNotary
+//! *Prover* and must route its upstream TLS call **through this process**, which:
 //!
 //!   1. proxies the encrypted traffic between the prover and the real server
 //!      (proxy mode — no MPC, so it works against TLS 1.3 servers and is fast),
@@ -41,7 +40,7 @@
 //!   UPSTREAM_PORT   server port (default 443)
 //!   NOTARY_SEED     deterministic notary key seed (default "demo-notary-key")
 //!
-//! Run: `cd tls-notary && cargo run` (cd in so the rust-toolchain.toml pin applies)
+//! Run: `cd tlsn/notary && cargo run` (the `tlsn/` rust-toolchain.toml pin applies)
 
 use std::{env, sync::Arc};
 
@@ -97,7 +96,7 @@ async fn main() -> Result<()> {
     });
 
     let listener = TcpListener::bind(&listen).await?;
-    println!("tls-notary (proxy mode) listening on {listen}");
+    println!("notary (proxy mode) listening on {listen}");
     println!("  notary pubkey : {pubkey}");
     println!(
         "  proxying to   : {}:{}  (attested via its TLS certificate)",

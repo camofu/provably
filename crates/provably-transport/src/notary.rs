@@ -1,8 +1,10 @@
-//! Toy zkTLS notary backend (Ed25519).
+//! The notary's Ed25519 signing identity.
 //!
-//! Stands in for a real zkTLS prover/notary: it signs the [`LegClaim`] rather than
-//! independently witnessing the TLS session. The verifier side lives in
-//! `provably-core` ([`LegAttestation::verify_proof`]); this is only the signer.
+//! This is the *signing* half of the notary. The TLS session is independently
+//! witnessed by the notary service (`tlsn/notary`, TLSNotary proxy mode); after it verifies
+//! the session it uses this to sign the [`LegClaim`]. The verification side is
+//! orchestrated by `provably-verifier` (via [`LegAttestation::verify_proof`]); this
+//! is only the signer.
 
 use ed25519_dalek::{Signer, SigningKey};
 use provably_core::{LegAttestation, LegClaim, LegProof};

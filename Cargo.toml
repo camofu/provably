@@ -7,19 +7,14 @@ members = [
     "crates/provably-transport",
     "crates/provably-prover",
     "crates/provably-mpp",
-    "examples/mock-llm-api",
-    "examples/reseller",
     "examples/buyer",
-    "examples/reseller-session",
-    "examples/buyer-session",
 ]
-# The real TLSNotary notary (proxy mode) is its own isolated workspace: it pulls
-# the heavy alpha `tlsn`/`mpz` MPC tree, which we keep out of the default
-# `cargo build --workspace` loop. Build it from its own dir (it pins rustc >= 1.95
-# via rust-toolchain.toml, which rustup only honors from that directory):
-#   cd tls-notary && cargo build
-# Same for reseller-tlsn (the reseller adapted into the TLSNotary Prover).
-exclude = ["tls-notary", "reseller-tlsn"]
+# The TLSNotary integration (notary + reseller-prover) lives in the isolated `tlsn/`
+# workspace: it pulls the heavy alpha `tlsn`/`mpz` MPC tree, which we keep out of the
+# default `cargo build --workspace` loop. Build it from its own dir (it pins
+# rustc >= 1.95 via rust-toolchain.toml, which rustup only honors from that directory):
+#   cd tlsn && cargo build
+exclude = ["tlsn"]
 
 # A provable reseller harness built on the Machine Payments Protocol (MPP).
 #

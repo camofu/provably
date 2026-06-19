@@ -1,0 +1,40 @@
+# The reseller as the TLSNotary Prover (proxy mode): a payment-gated proxy that routes
+# its upstream TLS call through the `notary` process, which witnesses and signs, so the
+# reseller relays a signed attestation it cannot forge. Member of the isolated `tlsn/`
+# workspace (see ../Cargo.toml).
+[package]
+name = "reseller"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "reseller"
+path = "src/main.rs"
+
+[dependencies]
+tlsn = { workspace = true }
+
+# Light, tlsn-free crates from the core workspace (path deps across the workspace
+# boundary — fine, they don't pull tlsn).
+provably-core = { path = "../../crates/provably-core" }
+provably-mpp = { path = "../../crates/provably-mpp" }
+provably-transport = { path = "../../crates/provably-transport" }   # ed25519 only, for the notary pubkey
+
+mpp = { path = "../../../mpp-rs", features = ["tempo", "server"] }
+alloy = { version = "2.0", features = ["provider-http"] }
+tempo-alloy = "1.8.0"
+
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+futures = "0.3"
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["full"] }
+http-body-util = "0.1"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

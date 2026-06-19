@@ -1,12 +1,13 @@
-# tls-notary
+# notary
 
 The **third-party TLSNotary notary**, running in **proxy mode** — the separate
-witnessing party that makes a leg proof trustless.
+witnessing party that makes a leg proof trustless. Member of the isolated `tlsn/`
+workspace.
 
-In the toy (`crates/provably-transport/src/notary.rs`) the reseller signed its own
-`LegClaim` with a key it controlled, so "verify the proof" really meant "trust the
-reseller." Here the reseller becomes the TLSNotary **Prover** and must route its
-upstream TLS call **through this process**, which:
+Without a separate notary, a reseller could sign its own `LegClaim` with a key it
+controls — so "verify the proof" would just mean "trust the reseller." Here the
+reseller is the TLSNotary **Prover** and must route its upstream TLS call **through
+this process**, which:
 
 1. proxies the encrypted traffic between the prover and the real server
    (**proxy mode**: no MPC, so it's fast and works against TLS 1.3 servers),
@@ -37,19 +38,16 @@ is specifically what MPC + presentation buys.
 The end-game is to run this as an **independent third party** or inside a **TEE**;
 for the PoC we operate it ourselves, but always as a **separate process with its
 own key**, which is what preserves the guarantee against the reseller. Co-locating
-it inside the reseller would rebuild the toy.
+it inside the reseller would collapse the trust model back to self-attestation.
 
 ## Build & run
 
-It depends on the alpha `tlsn` crate (the whole MPC/`mpz` tree), so it is an
-**isolated workspace**, excluded from the parent `cargo build --workspace`. It also
-requires rustc ≥ 1.95 (alpha `mpz`), pinned via `rust-toolchain.toml` — which
-`rustup` only honors from this directory, so **`cd` in first** (a `--manifest-path`
-build from the repo root would use the parent's older default toolchain and fail):
+Part of the isolated `tlsn/` workspace (it pulls the alpha `tlsn`/`mpz` tree and
+pins rustc 1.96 via `../rust-toolchain.toml`), excluded from the core
+`cargo build --workspace`. Run it from the workspace so the toolchain pin applies:
 
 ```bash
-cd tls-notary
-cargo run
+cd tlsn/notary && cargo run     # or, from tlsn/: cargo run -p notary
 ```
 
 Env knobs:
@@ -63,7 +61,6 @@ Env knobs:
 
 ## Status
 
-The notary side is complete: it verifies a proxy-mode session and returns a
-signed `LegAttestation`. The **prover** side (adapting the reseller to drive its
-upstream call through this notary) and the buyer-side verification of the new
-backend are the next integration steps.
+Builds and serves; pairs with the `reseller` prover and the `buyer` verifier. Full
+end-to-end validation against real Anthropic through proxy mode is the current
+milestone.

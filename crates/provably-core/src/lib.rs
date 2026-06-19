@@ -6,9 +6,10 @@
 //! - [`NodeProof::Leg`] — an external call (transport-attested).
 //! - [`NodeProof::Interior`] — the harness's own computation ([`InteriorProof`]).
 //!
-//! Today the only leg proof is the toy notary signature, and the only interior
-//! proof is [`InteriorProof::Recompute`] (the verifier re-runs a public transform).
-//! The bigger backends — zkTLS/TEE leg proofs, zkVM/inference interior proofs,
+//! Today the only leg proof is the notary's Ed25519 signature (a [`LegClaim`] signed
+//! by the TLSNotary service after it witnesses the TLS session), and the only
+//! interior proof is [`InteriorProof::Recompute`] (the verifier re-runs a public
+//! transform). The bigger backends — zkVM/inference interior proofs, TEE leg proofs,
 //! folding a leg's proof into a zkVM (one-proof / verify-in-circuit), and recursive
 //! agent-to-agent sub-receipts — are **new enum variants when implemented**, which
 //! is a non-breaking addition. They're deliberately *not* pre-declared here: their
