@@ -64,20 +64,37 @@ to rustc 1.96 via `rust-toolchain.toml`; both members share it, so `tlsn` builds
 | `tlsn/reseller` | The seller, as the TLSNotary Prover: payment gate + drives the upstream call through the notary. |
 | `examples/buyer` | The paying agent / verifier. Pays the reseller, then runs `verify()` before trusting the output. |
 
-The `mpp` crate is consumed from a sibling checkout at `../mpp-rs` (also published as
-`mpp = "0.10"` on crates.io).
+The `mpp` crate is the published [crates.io release](https://crates.io/crates/mpp), so
+a fresh clone builds with no extra checkout.
 
-## Run
+## Getting started
 
-The core workspace builds fast and tlsn-free:
+**Prerequisites:** Rust via [rustup](https://rustup.rs) (the `tlsn/` workspace pins
+rustc 1.96 and rustup auto-installs it on first build there); an Anthropic API key; and
+network access (to `api.anthropic.com` and the Tempo `moderato` testnet RPC).
 
 ```bash
+git clone https://github.com/camofu/provably && cd provably
+
+# the core framework — fast, no TLSNotary deps
 cargo build --workspace
+
+# the TLSNotary side — heavy & one-time (pulls the tlsn/mpz tree from GitHub;
+# rustup auto-installs the pinned rustc 1.96)
+cd tlsn && cargo build && cd ..
+
+# configure the upstream — copy the template, then put your key in UPSTREAM_API_KEY
+cp .env.example .env
 ```
 
-The charge-rail demo needs three processes plus a real TLS upstream (Anthropic is the
-example here). The `tlsn/` workspace builds from its own dir (so its rustc-1.96 pin
-applies):
+No `mpp-rs` checkout is needed — `mpp` resolves from crates.io. (Maintainers developing
+`mpp` locally can override it with a gitignored `.cargo/config.toml` containing
+`paths = ["../mpp-rs"]`.)
+
+## Run the demo
+
+Three processes against a real TLS upstream (Anthropic here). The `tlsn/` crates run
+from their own dir so the rustc-1.96 pin applies:
 
 ```bash
 # 1. the notary — proxies + witnesses + signs (listens :7047)

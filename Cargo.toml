@@ -18,11 +18,12 @@ exclude = ["tlsn"]
 
 # A provable reseller harness built on the Machine Payments Protocol (MPP).
 #
-# The `mpp` crate is consumed from the sibling checkout at ../mpp-rs (it is also
-# published on crates.io as `mpp = "0.10"`). `tempo` pulls in the Tempo testnet
-# payment method; individual member crates layer `server` / `client` on top.
+# `mpp` is the published crate (https://crates.io/crates/mpp), so a fresh clone builds
+# with no extra checkout. Maintainers developing `mpp` locally can override it with a
+# sibling checkout via a gitignored `.cargo/config.toml`: `paths = ["../mpp-rs"]`.
+# `tempo` pulls in the Tempo testnet payment method; member crates layer server/client.
 [workspace.dependencies]
-mpp = { path = "../mpp-rs", features = ["tempo"] }
+mpp = { version = "0.10", features = ["tempo"] }
 
 provably-core = { path = "crates/provably-core" }
 provably-verifier = { path = "crates/provably-verifier" }
