@@ -78,11 +78,17 @@ async fn main() {
         "max_tokens": 256,
         "messages": [{ "role": "user", "content": prompt }],
     });
+    // Serialize once so we can hash the *exact* bytes we send. The verifier binds
+    // the response to this request digest, so a reseller can't quietly ask the
+    // upstream a different (cheaper) question and pass off that genuine answer.
+    let request_body = serde_json::to_vec(&payload).expect("serialize request");
+    let request_digest = sha256_hex(&request_body);
 
     println!("\npaying reseller for: {prompt:?}");
     let resp = http
         .post(format!("{reseller}/v1/messages"))
-        .json(&payload)
+        .header("content-type", "application/json")
+        .body(request_body)
         .send_with_payment(&provider)
         .await
         .expect("request failed");
@@ -130,6 +136,7 @@ async fn main() {
             notary_pubkey: Some(&pinned_pubkey),
             served_output_digest: &served_digest,
             payment_reference: &receipt.reference,
+            served_request_digest: Some(&request_digest),
             recomputed: &[],
         },
     );
