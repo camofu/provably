@@ -1,0 +1,5 @@
+# The alpha `tlsn`/`mpz` dependency tree requires rustc >= 1.95
+# (mpz-fields@0.1.0-alpha.6). Pinned here so this isolated workspace builds with a
+# new-enough toolchain without changing the rest of the project's default (1.94).
+[toolchain]
+channel = "1.96.0"
