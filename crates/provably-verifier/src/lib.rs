@@ -12,8 +12,8 @@
 //! ([`LegAttestation::verify_proof`](provably_core::LegAttestation::verify_proof));
 //! this crate orchestrates it together with the cross-node bindings.
 
-use provably_core::{HarnessReceipt, InteriorProof, Manifest, Node, NodeId, NodeProof};
-use std::collections::HashMap;
+use provably_core::{HarnessReceipt, InteriorProof, LegAttestation, Manifest, Node, NodeId, NodeProof};
+use std::collections::{HashMap, HashSet};
 
 /// What the verifier expects.
 pub struct Expectation<'a> {
@@ -76,12 +76,16 @@ pub fn verify(receipt: &HarnessReceipt, expect: &Expectation) -> Vec<Check> {
 
     // Request binding: the leg that produced the sold output answered THE BUYER's
     // request — not a different (e.g. cheaper) one the reseller swapped in upstream.
-    // Only checked when the buyer supplies the digest of the request it actually sent.
+    // The sold output may be an interior node computed *from* a leg, so bind against the
+    // leg(s) it transitively depends on (for the single-leg chain that's just the
+    // upstream call feeding the verdict). Only checked when the buyer supplies the
+    // digest of the request it actually sent.
     if let Some(expected_req) = expect.served_request_digest {
-        let bound = match map.get(receipt.output_node.as_str()).map(|n| &n.proof) {
-            Some(NodeProof::Leg(att)) => att.claim.request_digest.as_str() == expected_req,
-            _ => false,
-        };
+        let legs = leg_ancestors(&map, receipt.output_node.as_str());
+        let bound = !legs.is_empty()
+            && legs
+                .iter()
+                .all(|att| att.claim.request_digest.as_str() == expected_req);
         checks.push(Check::new("output answers the buyer's request", bound));
     }
 
@@ -139,4 +143,25 @@ pub fn verify(receipt: &HarnessReceipt, expect: &Expectation) -> Vec<Check> {
     }
 
     checks
+}
+
+/// The leg attestations the `start` node's output transitively depends on (walking
+/// `inputs` edges; recursion stops at leg nodes). For the demo's `leg0 -> verdict` chain
+/// this returns `[leg0]`.
+fn leg_ancestors<'a>(map: &HashMap<&str, &'a Node>, start: &str) -> Vec<&'a LegAttestation> {
+    let mut legs = Vec::new();
+    let mut stack = vec![start.to_string()];
+    let mut seen = HashSet::new();
+    while let Some(id) = stack.pop() {
+        if !seen.insert(id.clone()) {
+            continue;
+        }
+        if let Some(&node) = map.get(id.as_str()) {
+            match &node.proof {
+                NodeProof::Leg(att) => legs.push(att),
+                NodeProof::Interior(_) => stack.extend(node.inputs.iter().cloned()),
+            }
+        }
+    }
+    legs
 }

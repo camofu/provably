@@ -7,6 +7,7 @@ members = [
     "crates/provably-transport",
     "crates/provably-prover",
     "crates/provably-mpp",
+    "examples/harness",
     "examples/buyer",
 ]
 # The TLSNotary integration (notary + reseller-prover) lives in the isolated `tlsn/`
@@ -30,6 +31,7 @@ provably-verifier = { path = "crates/provably-verifier" }
 provably-transport = { path = "crates/provably-transport" }
 provably-prover = { path = "crates/provably-prover" }
 provably-mpp = { path = "crates/provably-mpp" }
+harness = { path = "examples/harness" }
 
 alloy = { version = "2.0", features = ["provider-http"] }
 tempo-alloy = "1.8.0"

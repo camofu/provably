@@ -47,14 +47,16 @@ use axum::{
     Json, Router,
 };
 use futures::io::AsyncReadExt as _;
+use harness::{starts_with_yes, MANIFEST_ID, VERDICT_FN_ID};
 use http_body_util::{BodyExt, Full};
 use hyper::Request as HyperRequest;
 use hyper_util::rt::TokioIo;
 use mpp::server::{tempo, Mpp, TempoChargeMethod, TempoConfig};
 use mpp::{format_www_authenticate, parse_authorization, PrivateKeySigner};
-use provably_core::{sha256_hex, HarnessReceipt, LegAttestation, Node, NodeProof};
-use provably_mpp::PROVABLY_RECEIPT_HEADER;
+use provably_core::{sha256_hex, HarnessReceipt, InteriorProof, LegAttestation, Node, NodeProof};
+use provably_mpp::{materials_to_header, PROVABLY_MATERIALS_HEADER, PROVABLY_RECEIPT_HEADER};
 use provably_transport::Notary;
+use std::collections::BTreeMap;
 use std::future::IntoFuture;
 use tempo_alloy::TempoNetwork;
 use tokio::net::TcpStream;
@@ -72,8 +74,10 @@ use tlsn::{
 
 type Payment = Mpp<TempoChargeMethod<mpp::server::TempoProvider>>;
 
-/// The harness this reseller serves: a single-leg passthrough of the upstream LLM.
-const MANIFEST_ID: &str = "passthrough-llm-v1";
+// The harness this reseller serves — call the upstream LLM (leg0), then an interior
+// `verdict` node = 1 if the answer starts with "yes", else 0 — is defined in the
+// `harness` example crate (`MANIFEST_ID`, `VERDICT_FN_ID`, `starts_with_yes`). It's
+// seller-specific product logic, not reseller infrastructure, so it lives there.
 
 #[derive(Clone, Copy, PartialEq)]
 enum Mode {
@@ -225,42 +229,72 @@ async fn messages(State(st): State<Arc<App>>, headers: HeaderMap, body: Bytes) -
         }
     };
 
-    // The attested digest is the canonical commitment. In honest mode the bytes we
-    // deliver must hash to it; if they don't, the on-wire encoding broke the
-    // body-digest contract (see the notary: identity + non-chunked required).
-    let output_digest = leg.claim.response_digest.clone();
-    if st.mode == Mode::Honest && sha256_hex(&response_body) != output_digest {
+    // leg0's committed digest is the notary's. The buyer re-runs the interior transform
+    // over leg0's *bytes*, so those bytes must hash to this digest; if they don't, the
+    // on-wire encoding broke the body-digest contract (see the notary: identity +
+    // non-chunked required) and the buyer's material check will fail.
+    let leg_digest = leg.claim.response_digest.clone();
+    if st.mode == Mode::Honest && sha256_hex(&response_body) != leg_digest {
         tracing::warn!(
-            "delivered body digest != attested response digest — likely chunked/compressed \
-             upstream; the buyer's check will fail. attested={output_digest}"
+            "leg body digest != attested response digest — likely chunked/compressed \
+             upstream; the buyer's material check will fail. attested={leg_digest}"
         );
     }
 
-    // 3. Bundle a single-leg passthrough receipt bound to this payment.
-    let harness_receipt = HarnessReceipt {
-        manifest_id: MANIFEST_ID.into(),
-        nodes: vec![Node {
-            id: "leg0".into(),
-            inputs: vec![],
-            output_digest,
-            proof: NodeProof::Leg(leg),
-        }],
-        output_node: "leg0".into(),
-        payment_reference: Some(receipt.reference.clone()),
-    };
-
-    // 4. In cheat mode, sell tampered bytes while the receipt still commits to the
-    //    real notarized output — the model-substitution fraud the buyer must catch.
-    let delivered = match st.mode {
-        Mode::Honest => response_body,
+    // The answer the interior transform runs over. Honest mode runs it over the genuine
+    // notarized bytes; cheat-substitute runs it over a *substituted* answer (model
+    // substitution) — the buyer recomputes a consistent verdict but rejects the bundle
+    // because the substituted bytes don't hash to the notary-pinned leg digest.
+    let leg_output = match st.mode {
+        Mode::Honest => response_body.clone(),
         Mode::CheatSubstitute => substitute(&response_body),
     };
 
+    // 3. Interior `verdict` node = 1 if the answer starts with "yes", else 0. This ships
+    //    no proof: the receipt names the transform (`fn_id`) and commits its output
+    //    digest; the buyer re-runs its own copy of `starts_with_yes` over leg0's bytes.
+    let verdict = starts_with_yes(&leg_output);
+    let verdict_digest = sha256_hex(&verdict);
+
+    // Bundle the leg0 -> verdict DAG, bound to this payment. The sold output is the
+    // verdict node, not the raw upstream answer.
+    let harness_receipt = HarnessReceipt {
+        manifest_id: MANIFEST_ID.into(),
+        nodes: vec![
+            Node {
+                id: "leg0".into(),
+                inputs: vec![],
+                output_digest: leg_digest,
+                proof: NodeProof::Leg(leg),
+            },
+            Node {
+                id: "verdict".into(),
+                inputs: vec!["leg0".into()],
+                output_digest: verdict_digest,
+                proof: NodeProof::Interior(InteriorProof::Recompute {
+                    fn_id: VERDICT_FN_ID.into(),
+                }),
+            },
+        ],
+        output_node: "verdict".into(),
+        payment_reference: Some(receipt.reference.clone()),
+    };
+
+    // 4. The buyer re-runs the interior transform itself, so it needs leg0's output bytes
+    //    (the notary attests only the digest). Ship them in the materials sidecar. In
+    //    cheat mode these are the substituted bytes, which won't match the pinned digest.
+    let mut materials = BTreeMap::new();
+    materials.insert("leg0".to_string(), leg_output);
+
+    // The product the buyer pays for is the verdict (1/0), not the full answer.
+    let delivered = verdict;
+
     Response::builder()
         .status(StatusCode::OK)
-        .header("content-type", "application/json")
+        .header("content-type", "text/plain; charset=utf-8")
         .header("payment-receipt", receipt.to_header().unwrap_or_default())
         .header(PROVABLY_RECEIPT_HEADER, harness_receipt.to_header())
+        .header(PROVABLY_MATERIALS_HEADER, materials_to_header(&materials))
         .body(Body::from(delivered))
         .expect("valid response")
 }

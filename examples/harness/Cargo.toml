@@ -1,0 +1,9 @@
+[package]
+name = "harness"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "The example seller's harness: the public interior transform the buyer re-runs."
+
+[dependencies]
+serde_json = { workspace = true }

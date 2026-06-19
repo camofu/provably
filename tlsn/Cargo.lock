@@ -2776,6 +2776,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "harness"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4457,6 +4464,7 @@ dependencies = [
 name = "provably-mpp"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "provably-core",
  "provably-verifier",
  "serde_json",
@@ -4815,6 +4823,7 @@ dependencies = [
  "axum",
  "dotenvy",
  "futures",
+ "harness",
  "http-body-util",
  "hyper",
  "hyper-util",

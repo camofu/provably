@@ -1385,6 +1385,7 @@ name = "buyer"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "harness",
  "mpp",
  "provably-core",
  "provably-mpp",
@@ -2271,6 +2272,13 @@ dependencies = [
  "ff",
  "rand_core 0.6.4",
  "subtle",
+]
+
+[[package]]
+name = "harness"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
@@ -3397,6 +3405,7 @@ dependencies = [
 name = "provably-mpp"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "provably-core",
  "provably-verifier",
  "serde_json",

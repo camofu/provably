@@ -9,12 +9,49 @@
 //!    proof can't live inside it — it's bound to it via `payment_reference`).
 //! 3. [`gate`] — condition delivery/settlement on `provably_verifier::verify` passing.
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use provably_core::{HarnessReceipt, Manifest, VerifyError};
 use provably_verifier::{verify, Expectation};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 
 /// Response header carrying the base64url-encoded [`HarnessReceipt`] bundle.
 pub const PROVABLY_RECEIPT_HEADER: &str = "x-provably-receipt";
+
+/// Response header carrying the intermediate node outputs the buyer needs to *re-run*
+/// interior (`Recompute`) nodes. A notary leg attests only the response *digest*, so the
+/// actual leg bytes must travel here for the buyer to recompute the transform over them
+/// and tie the result back to the notarized digest. (A real zk/TEE interior proof would
+/// not need this — the prover would ship a proof instead of the inputs.)
+pub const PROVABLY_MATERIALS_HEADER: &str = "x-provably-materials";
+
+/// Encode `node_id -> output bytes` for [`PROVABLY_MATERIALS_HEADER`]
+/// (base64url(JSON{ id: base64url(bytes) })).
+pub fn materials_to_header(materials: &BTreeMap<String, Vec<u8>>) -> String {
+    let encoded: BTreeMap<&String, String> = materials
+        .iter()
+        .map(|(id, bytes)| (id, URL_SAFE_NO_PAD.encode(bytes)))
+        .collect();
+    URL_SAFE_NO_PAD.encode(serde_json::to_vec(&encoded).expect("materials serialize"))
+}
+
+/// Decode the materials header produced by [`materials_to_header`].
+pub fn materials_from_header(value: &str) -> Result<BTreeMap<String, Vec<u8>>, VerifyError> {
+    let json = URL_SAFE_NO_PAD
+        .decode(value.trim())
+        .map_err(|_| VerifyError::Malformed("base64"))?;
+    let encoded: BTreeMap<String, String> =
+        serde_json::from_slice(&json).map_err(|_| VerifyError::Malformed("json"))?;
+    encoded
+        .into_iter()
+        .map(|(id, b)| {
+            URL_SAFE_NO_PAD
+                .decode(b.trim())
+                .map(|bytes| (id, bytes))
+                .map_err(|_| VerifyError::Malformed("base64"))
+        })
+        .collect()
+}
 
 /// `methodDetails` value advertising the proof requirement in the 402 challenge.
 /// Merge this into the intent's `methodDetails` so clients/contracts learn the

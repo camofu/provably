@@ -26,8 +26,11 @@ A harness's output is described by a **`HarnessReceipt`** — a DAG of nodes:
 
 wired by `inputs` (edges) and bound together by **digest-equality**. The receipt is
 bound to the MPP payment via the payment reference, and the buyer checks it against a
-pinned **`Manifest`** (which hosts are allowed, which harness spec). Today's harness is
-the simplest DAG: a **single-leg passthrough** (forward one upstream call, prove it).
+pinned **`Manifest`** (which hosts are allowed, which harness spec). Today's harness is a
+two-node DAG: a notarized upstream call (`leg0`) feeding an interior **`verdict`** node —
+`1` if the answer starts with "yes", else `0` — which the buyer re-runs to verify. The
+sold output is the verdict; the seller ships `leg0`'s bytes alongside it so the buyer can
+recompute the transform and tie the result back to the notarized digest.
 
 ### How the leg proof works (interactive-verify + re-sign)
 
@@ -61,8 +64,9 @@ to rustc 1.96 via `rust-toolchain.toml`; both members share it, so `tlsn` builds
 | Crate | Role |
 |---|---|
 | `tlsn/notary` | The third-party notary: proxies + verifies the TLS session, then signs the `LegClaim`. |
-| `tlsn/reseller` | The seller, as the TLSNotary Prover: payment gate + drives the upstream call through the notary. |
-| `examples/buyer` | The paying agent / verifier. Pays the reseller, then runs `verify()` before trusting the output. |
+| `tlsn/reseller` | The seller, as the TLSNotary Prover: payment gate + drives the upstream call through the notary, then runs the interior transform. |
+| `examples/harness` | This seller's product logic: the public interior transform (`starts_with_yes`) both the reseller and buyer run — seller-specific, not framework. |
+| `examples/buyer` | The paying agent / verifier. Pays the reseller, re-runs the interior transform, then runs `verify()` before trusting the output. |
 
 The `mpp` crate is the published [crates.io release](https://crates.io/crates/mpp), so
 a fresh clone builds with no extra checkout.
@@ -105,25 +109,33 @@ cd tlsn/notary && UPSTREAM_HOST=api.anthropic.com cargo run
 cd tlsn/reseller && cargo run
 
 # 3. the buyer — pays, then verifies the proof (core workspace)
-cargo run --bin buyer -- "What is the Machine Payments Protocol?"
+cargo run --bin buyer -- "Is the Eiffel Tower in Paris? Answer Yes or No."
 ```
 
-An honest run passes every check; the buyer prints `✅ VERIFIED — output provably
-served by api.anthropic.com, bound to payment 0x…`.
+An honest run passes every check; the buyer prints the verdict (`1`/`0`), the upstream
+answer it re-ran the transform over, and `✅ VERIFIED — verdict provably computed by
+\`starts_with_yes\` over the notarized api.anthropic.com answer, bound to payment 0x…`.
 
 ### Fraud detection
 
-Restart the reseller in cheat mode — it sells tampered bytes while the receipt still
-commits to the real upstream output:
+Restart the reseller in cheat mode — it feeds its computation a *substituted* upstream
+answer (and ships those bytes), while `leg0` still commits to the **notarized** digest of
+the real answer:
 
 ```bash
 cd tlsn/reseller && RESELLER_MODE=cheat-substitute cargo run   # UPSTREAM_* from .env
 cargo run --bin buyer
 ```
 
+The verdict and receipt are internally consistent with the *fake* answer, but the buyer
+catches it: the shipped leg bytes don't hash to the notary-pinned digest, so it can't
+trust them as the recompute input.
+
 ```
-served model : "claude-haiku-cheap-substitute"
-  [FAIL] delivered bytes match output node
+verdict      : 0
+upstream ans : "[SUBSTITUTED cheaper output — not the notarized bytes]"
+  [FAIL] material leg0 matches committed digest
+  [FAIL] node verdict recompute NOT re-verified (no recomputer)
 ❌ REJECTED — model substitution / tampering. Do not trust this output;
    dispute the payment or slash the reseller's bond.
 ```
