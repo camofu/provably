@@ -84,11 +84,8 @@ applies):
 cd tlsn/notary && UPSTREAM_HOST=api.anthropic.com cargo run
 
 # 2. the reseller-prover — payment gate + TLSNotary Prover (listens :3000)
-cd tlsn/reseller && \
-  UPSTREAM_HOST=api.anthropic.com \
-  UPSTREAM_API_KEY=sk-ant-... \
-  UPSTREAM_HEADERS="anthropic-version: 2023-06-01" \
-  cargo run
+#    reads UPSTREAM_* from the repo's .env (copy .env.example → .env, add your key)
+cd tlsn/reseller && cargo run
 
 # 3. the buyer — pays, then verifies the proof (core workspace)
 cargo run --bin buyer -- "What is the Machine Payments Protocol?"
@@ -103,9 +100,7 @@ Restart the reseller in cheat mode — it sells tampered bytes while the receipt
 commits to the real upstream output:
 
 ```bash
-cd tlsn/reseller && RESELLER_MODE=cheat-substitute \
-  UPSTREAM_HOST=api.anthropic.com UPSTREAM_API_KEY=sk-ant-... \
-  UPSTREAM_HEADERS="anthropic-version: 2023-06-01" cargo run
+cd tlsn/reseller && RESELLER_MODE=cheat-substitute cargo run   # UPSTREAM_* from .env
 cargo run --bin buyer
 ```
 
@@ -123,7 +118,8 @@ served model : "claude-haiku-cheap-substitute"
 `api.anthropic.com`), `UPSTREAM_API_KEY` (held by the reseller, redacted from the
 disclosed transcript), `UPSTREAM_HEADERS` (extra request headers, `"Name: Value; …"`),
 `NOTARY_SEED` (only to expose `/notary/pubkey`), `RESELLER_MODE` (`honest` |
-`cheat-substitute`).
+`cheat-substitute`). These are loaded from a `.env` file at the repo root (see
+`.env.example`) or the process environment.
 
 **tlsn/notary:** `NOTARY_LISTEN` (default `0.0.0.0:7047`), `UPSTREAM_HOST` (required,
 e.g. `api.anthropic.com`), `UPSTREAM_PORT` (default `443`), `NOTARY_SEED`.

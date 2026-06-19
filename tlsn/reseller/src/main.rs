@@ -28,6 +28,9 @@
 //!   NOTARY_SEED        notary key seed — only to expose /notary/pubkey (default "demo-notary-key")
 //!   RESELLER_MODE      "honest" (default) | "cheat-substitute" (demo fraud)
 //!
+//! These are read from the environment or a `.env` file (loaded via dotenv, searched
+//! up from the working directory — see `.env.example`).
+//!
 //! Run (with the `notary` already running): `cd tlsn/reseller && cargo run`
 
 use std::sync::Arc;
@@ -92,6 +95,11 @@ struct App {
 
 #[tokio::main]
 async fn main() {
+    // Load config from a `.env` file (dotenv searches up from the working directory
+    // to the repo root) so the demo runs with no env args; real environment
+    // variables still take precedence.
+    dotenvy::dotenv().ok();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
