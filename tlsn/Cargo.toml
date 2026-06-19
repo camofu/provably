@@ -1,0 +1,14 @@
+# The TLSNotary integration — the notary service (`notary`) and the reseller-prover
+# (`reseller`) — in one isolated workspace. It pulls the alpha `tlsn`/`mpz` MPC tree,
+# so it is kept OUT of the core `cargo build --workspace` (the repo root excludes
+# `tlsn`) and pins rustc 1.96 via `rust-toolchain.toml`. Both members share this
+# workspace, so `tlsn` compiles once. Build from this directory:
+#   cd tlsn && cargo build            # or: cargo run -p notary / cargo run -p reseller
+[workspace]
+resolver = "2"
+members = ["notary", "reseller"]
+
+[workspace.dependencies]
+# Pinned to a known-good revision: tlsn is pre-1.0 alpha and its API shifts between
+# releases (v0.1.0-alpha.16-pre at this rev). Shared so both members build it once.
+tlsn = { git = "https://github.com/tlsnotary/tlsn", rev = "90ce52ad2885b97e4ce676cc9335065032712477", features = ["mozilla-certs"] }

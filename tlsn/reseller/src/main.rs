@@ -1,34 +1,34 @@
 //! The **reseller, adapted into the TLSNotary Prover** (proxy mode).
 //!
-//! Same payment-gated proxy as `examples/reseller`: a buyer pays for `POST
-//! /anthropic/v1/messages` over MPP, gets the response plus an
-//! `x-provably-receipt`. The difference is *how the leg is attested*. The toy
-//! reseller called upstream with reqwest and signed its own [`LegClaim`] — so the
-//! proof was only as trustworthy as the reseller. Here the reseller is the
-//! TLSNotary **Prover**: it routes the upstream TLS call **through the `tls-notary`
-//! process**, which witnesses the session, verifies the server certificate, and
-//! signs the [`LegClaim`] with a key the reseller does not hold. The reseller just
-//! relays that signed attestation. It can no longer forge the leg.
+//! A payment-gated proxy: a buyer pays for `POST /v1/messages` over MPP
+//! and gets the response plus an `x-provably-receipt`. Rather than calling upstream
+//! directly and signing its own [`LegClaim`] — which would make the proof only as
+//! trustworthy as the reseller — it routes the upstream TLS call **through the
+//! `notary` process**: it is the TLSNotary **Prover**, and the notary witnesses
+//! the session, verifies the server certificate, and signs the [`LegClaim`] with a
+//! key the reseller does not hold. The reseller just relays that signed attestation.
+//! It cannot forge the leg.
 //!
 //! Because the proof type on the wire is unchanged (`LegProof::Notary` + Ed25519),
 //! the **buyer is unchanged** — it still pins the notary pubkey + manifest and runs
 //! the same `verify()`. Only the reseller's interior changed.
 //!
-//! Note: the upstream must be a real **TLS** server (the plain-HTTP `mock-llm-api`
-//! cannot be notarized — there is no TLS handshake to witness). Point this at
-//! `api.anthropic.com` (default) with `ANTHROPIC_API_KEY` set.
+//! Note: the upstream must be a real **TLS** server — a plain-HTTP server cannot be
+//! notarized, since there is no TLS handshake to witness. For example, to proxy
+//! Anthropic, set `UPSTREAM_HOST=api.anthropic.com` and `UPSTREAM_API_KEY`.
 //!
 //! Env knobs:
 //!   RPC_URL            Tempo RPC (default moderato testnet)
 //!   MPP_SECRET_KEY     server secret for stateless challenge ids
 //!   PRICE              price per call, human units (default "0.05")
-//!   NOTARY_ADDR        where the tls-notary process listens (default 127.0.0.1:7047)
-//!   UPSTREAM_HOST      TLS server to attest (default api.anthropic.com)
-//!   ANTHROPIC_API_KEY  injected as x-api-key (and *redacted* from the proof)
+//!   NOTARY_ADDR        where the notary process listens (default 127.0.0.1:7047)
+//!   UPSTREAM_HOST      TLS server to proxy + attest, required (e.g. api.anthropic.com)
+//!   UPSTREAM_API_KEY   injected as x-api-key (and *redacted* from the proof)
+//!   UPSTREAM_HEADERS   extra request headers "Name: Value; …" (e.g. anthropic-version: 2023-06-01)
 //!   NOTARY_SEED        notary key seed — only to expose /notary/pubkey (default "demo-notary-key")
 //!   RESELLER_MODE      "honest" (default) | "cheat-substitute" (demo fraud)
 //!
-//! Run (with `tls-notary` already running): `cd reseller-tlsn && cargo run`
+//! Run (with the `notary` already running): `cd tlsn/reseller && cargo run`
 
 use std::sync::Arc;
 
@@ -83,6 +83,8 @@ struct App {
     notary_addr: String,
     upstream_host: String,
     api_key: Option<String>,
+    /// Extra request headers injected upstream (e.g. an API version header).
+    upstream_headers: Vec<(String, String)>,
     notary_pubkey: String,
     price: String,
     mode: Mode,
@@ -100,9 +102,12 @@ async fn main() {
         std::env::var("RPC_URL").unwrap_or_else(|_| "https://rpc.moderato.tempo.xyz".to_string());
     let notary_addr =
         std::env::var("NOTARY_ADDR").unwrap_or_else(|_| "127.0.0.1:7047".to_string());
-    let upstream_host =
-        std::env::var("UPSTREAM_HOST").unwrap_or_else(|_| "api.anthropic.com".to_string());
-    let api_key = std::env::var("ANTHROPIC_API_KEY").ok();
+    let upstream_host = std::env::var("UPSTREAM_HOST")
+        .expect("UPSTREAM_HOST must be set (the TLS server to proxy and attest)");
+    let api_key = std::env::var("UPSTREAM_API_KEY").ok();
+    let upstream_headers = std::env::var("UPSTREAM_HEADERS")
+        .map(|s| parse_headers(&s))
+        .unwrap_or_default();
     let price = std::env::var("PRICE").unwrap_or_else(|_| "0.05".to_string());
     let notary_seed =
         std::env::var("NOTARY_SEED").unwrap_or_else(|_| "demo-notary-key".to_string());
@@ -143,6 +148,7 @@ async fn main() {
         notary_addr: notary_addr.clone(),
         upstream_host: upstream_host.clone(),
         api_key,
+        upstream_headers,
         notary_pubkey: notary_pubkey.clone(),
         price: price.clone(),
         mode,
@@ -151,7 +157,7 @@ async fn main() {
     let app = Router::new()
         .route("/health", get(|| async { Json(serde_json::json!({"status":"ok"})) }))
         .route("/notary/pubkey", get(notary_pubkey_route))
-        .route("/anthropic/v1/messages", post(messages))
+        .route("/v1/messages", post(messages))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
@@ -213,7 +219,7 @@ async fn messages(State(st): State<Arc<App>>, headers: HeaderMap, body: Bytes) -
 
     // The attested digest is the canonical commitment. In honest mode the bytes we
     // deliver must hash to it; if they don't, the on-wire encoding broke the
-    // body-digest contract (see tls-notary: identity + non-chunked required).
+    // body-digest contract (see the notary: identity + non-chunked required).
     let output_digest = leg.claim.response_digest.clone();
     if st.mode == Mode::Honest && sha256_hex(&response_body) != output_digest {
         tracing::warn!(
@@ -296,10 +302,11 @@ async fn run_prover(st: &App, body: &Bytes) -> Result<(Vec<u8>, LegAttestation)>
         .header("accept", "application/json")
         .header("accept-encoding", "identity")
         .header("connection", "close");
+    for (name, value) in &st.upstream_headers {
+        req = req.header(name.as_str(), value.as_str());
+    }
     if let Some(key) = &st.api_key {
-        req = req
-            .header("x-api-key", key.as_str())
-            .header("anthropic-version", "2023-06-01");
+        req = req.header("x-api-key", key.as_str());
     }
     let req = req.body(Full::new(body.clone()))?;
 
@@ -348,7 +355,7 @@ async fn run_prover(st: &App, body: &Bytes) -> Result<(Vec<u8>, LegAttestation)>
     prover.close().await?;
 
     // Tear down the session and reclaim the raw socket; the notary writes the
-    // signed attestation (JSON) until EOF (see tls-notary's wire-protocol note).
+    // signed attestation (JSON) until EOF (see the notary's wire-protocol note).
     handle.close();
     let mut socket = driver_task.await??;
     let mut buf = Vec::new();
@@ -373,6 +380,16 @@ fn challenge(st: &App) -> Response {
         },
         Err(e) => server_error(e.to_string()),
     }
+}
+
+/// Parse `UPSTREAM_HEADERS` ("Name: Value; Name2: Value2") into header pairs.
+fn parse_headers(raw: &str) -> Vec<(String, String)> {
+    raw.split(';')
+        .filter_map(|pair| {
+            let (name, value) = pair.trim().split_once(':')?;
+            Some((name.trim().to_string(), value.trim().to_string()))
+        })
+        .collect()
 }
 
 /// Replace the model and text with a cheaper substitute, leaving valid JSON.

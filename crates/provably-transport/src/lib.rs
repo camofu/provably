@@ -1,12 +1,10 @@
-//! `provably-transport` — leg attesters.
+//! `provably-transport` — the notary's signing identity.
 //!
-//! An attester turns a completed external call (a [`LegClaim`]) into a
-//! [`LegAttestation`]. Today there is one backend, the toy [`notary`] (Ed25519);
-//! the real `zktls` and `tee` backends slot in behind the same [`Attester`] trait.
-//!
-//! For the toy, the harness performs the HTTP call itself and hands the claim to
-//! the attester. When zkTLS lands this trait grows an
-//! `attest_call(request) -> (Response, LegAttestation)` method that owns the call.
+//! [`Notary`] is the Ed25519 signing half of the notary: it turns a [`LegClaim`]
+//! into a signed [`LegAttestation`]. The TLS session itself is witnessed by the
+//! notary service (`tlsn/notary`, TLSNotary proxy mode), which calls this to sign
+//! what it verified; the reseller prover (`tlsn/reseller`) drives the upstream call
+//! through that service. The verification side is orchestrated by `provably-verifier`.
 
 use provably_core::{LegAttestation, LegClaim};
 

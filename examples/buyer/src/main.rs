@@ -9,7 +9,7 @@
 //!      (this is what catches model substitution), and
 //!   4. the attestation is bound to the payment we just made.
 //!
-//! Run (after starting mock-llm-api + reseller):
+//! Run (after starting the notary + reseller from `tlsn/`):
 //!   cargo run --bin buyer
 //!   cargo run --bin buyer -- "summarize zkTLS in one line"
 //!
@@ -81,7 +81,7 @@ async fn main() {
 
     println!("\npaying reseller for: {prompt:?}");
     let resp = http
-        .post(format!("{reseller}/anthropic/v1/messages"))
+        .post(format!("{reseller}/v1/messages"))
         .json(&payload)
         .send_with_payment(&provider)
         .await

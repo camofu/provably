@@ -1,0 +1,5 @@
+# The alpha tlsn/mpz tree requires rustc >= 1.95 (mpz-fields). Pinned here so this
+# isolated workspace builds with a new-enough toolchain without changing the rest of
+# the project's default. rustup honors this from the workspace dir or any member.
+[toolchain]
+channel = "1.96.0"

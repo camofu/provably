@@ -3946,6 +3946,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "notary"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "provably-core",
+ "provably-transport",
+ "serde_json",
+ "tlsn",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber 0.3.23",
+]
+
+[[package]]
 name = "nu-ansi-term"
 version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4787,7 +4803,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "reseller-tlsn"
+name = "reseller"
 version = "0.1.0"
 dependencies = [
  "alloy",

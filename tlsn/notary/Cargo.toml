@@ -1,0 +1,29 @@
+# The third-party TLSNotary notary (proxy mode): the separate witnessing party that
+# makes a leg proof trustless. The reseller (the TLSNotary Prover) cannot produce a
+# leg attestation alone — it routes its upstream TLS call through this process, which
+# proxies the traffic, verifies the TLS session, and signs the claim with a key the
+# reseller does not hold. Member of the isolated `tlsn/` workspace (see ../Cargo.toml).
+[package]
+name = "notary"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "notary"
+path = "src/main.rs"
+
+[dependencies]
+tlsn = { workspace = true }
+
+# Reuse the canonical claim type + signing identity rather than inventing a second.
+provably-core = { path = "../../crates/provably-core" }
+provably-transport = { path = "../../crates/provably-transport" }
+
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+futures = "0.3"
+anyhow = "1"
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
