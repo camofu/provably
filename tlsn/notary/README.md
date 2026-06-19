@@ -47,7 +47,7 @@ pins rustc 1.96 via `../rust-toolchain.toml`), excluded from the core
 `cargo build --workspace`. Run it from the workspace so the toolchain pin applies:
 
 ```bash
-cd tlsn/notary && cargo run     # or, from tlsn/: cargo run -p notary
+cd tlsn/notary && UPSTREAM_HOST=api.anthropic.com cargo run   # or from tlsn/: cargo run -p notary
 ```
 
 Env knobs:
@@ -55,7 +55,7 @@ Env knobs:
 | var | default | meaning |
 |---|---|---|
 | `NOTARY_LISTEN` | `0.0.0.0:7047` | address the prover (reseller) connects to |
-| `UPSTREAM_HOST` | `api.anthropic.com` | server to proxy to and attest |
+| `UPSTREAM_HOST` | *(required)* | server to proxy to and attest, e.g. `api.anthropic.com` |
 | `UPSTREAM_PORT` | `443` | server port |
 | `NOTARY_SEED` | `demo-notary-key` | deterministic notary key seed (buyer pins the derived pubkey) |
 

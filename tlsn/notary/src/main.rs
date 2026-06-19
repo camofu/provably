@@ -36,7 +36,7 @@
 //!
 //! Env knobs:
 //!   NOTARY_LISTEN   address the prover (reseller) connects to (default 0.0.0.0:7047)
-//!   UPSTREAM_HOST   server to proxy to and attest (default api.anthropic.com)
+//!   UPSTREAM_HOST   server to proxy + attest, required
 //!   UPSTREAM_PORT   server port (default 443)
 //!   NOTARY_SEED     deterministic notary key seed (default "demo-notary-key")
 //!
@@ -76,7 +76,8 @@ async fn main() -> Result<()> {
         .init();
 
     let listen = env::var("NOTARY_LISTEN").unwrap_or_else(|_| "0.0.0.0:7047".into());
-    let upstream_host = env::var("UPSTREAM_HOST").unwrap_or_else(|_| "api.anthropic.com".into());
+    let upstream_host =
+        env::var("UPSTREAM_HOST").expect("UPSTREAM_HOST must be set (the TLS server to proxy and attest)");
     let upstream_port: u16 = env::var("UPSTREAM_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
@@ -89,8 +90,8 @@ async fn main() -> Result<()> {
     let cfg = Arc::new(Config {
         upstream_host,
         upstream_port,
-        // Real servers (e.g. api.anthropic.com) chain to Mozilla's roots. For an
-        // offline/self-signed test target, swap this for a custom RootCertStore.
+        // Real servers chain to Mozilla's roots. For an offline/self-signed test
+        // target, swap this for a custom RootCertStore.
         root_store: RootCertStore::mozilla(),
         notary,
     });

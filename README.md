@@ -81,7 +81,7 @@ applies):
 
 ```bash
 # 1. the notary — proxies + witnesses + signs (listens :7047)
-cd tlsn/notary && cargo run
+cd tlsn/notary && UPSTREAM_HOST=api.anthropic.com cargo run
 
 # 2. the reseller-prover — payment gate + TLSNotary Prover (listens :3000)
 cd tlsn/reseller && \
@@ -125,8 +125,8 @@ disclosed transcript), `UPSTREAM_HEADERS` (extra request headers, `"Name: Value;
 `NOTARY_SEED` (only to expose `/notary/pubkey`), `RESELLER_MODE` (`honest` |
 `cheat-substitute`).
 
-**tlsn/notary:** `NOTARY_LISTEN` (default `0.0.0.0:7047`), `UPSTREAM_HOST` /
-`UPSTREAM_PORT` (default `api.anthropic.com:443`), `NOTARY_SEED`.
+**tlsn/notary:** `NOTARY_LISTEN` (default `0.0.0.0:7047`), `UPSTREAM_HOST` (required,
+e.g. `api.anthropic.com`), `UPSTREAM_PORT` (default `443`), `NOTARY_SEED`.
 
 **buyer:** `RPC_URL`, `RESELLER_URL` (default `http://localhost:3000`),
 `EXPECTED_UPSTREAM` (default `api.anthropic.com`), `NOTARY_PUBKEY` (pin out-of-band;
