@@ -20,18 +20,15 @@ just the example below.
 
 ## Run
 
-Needs the notary running and a real TLS upstream. Example, proxying Anthropic:
+Needs the notary running and a real TLS upstream. Config (`UPSTREAM_*`) is read from
+a `.env` file at the repo root — copy `.env.example` to `.env` and fill in your key.
 
 ```bash
 # terminal 1: the notary
 cd tlsn/notary && cargo run
 
-# terminal 2: the reseller-prover
-cd tlsn/reseller
-UPSTREAM_HOST=api.anthropic.com \
-UPSTREAM_API_KEY=sk-ant-... \
-UPSTREAM_HEADERS="anthropic-version: 2023-06-01" \
-cargo run
+# terminal 2: the reseller-prover (UPSTREAM_* loaded from the repo .env)
+cd tlsn/reseller && cargo run
 
 # terminal 3: the unchanged buyer (from the core workspace)
 cargo run --bin buyer -- "your prompt"
@@ -39,11 +36,12 @@ cargo run --bin buyer -- "your prompt"
 
 The `UPSTREAM_API_KEY` is held only by this process and is **redacted** from the
 disclosed transcript (the notary never sees it). To demo fraud detection, add
-`RESELLER_MODE=cheat-substitute`.
+`RESELLER_MODE=cheat-substitute cargo run`.
 
-Env knobs: `UPSTREAM_HOST` (required), `UPSTREAM_API_KEY`, `UPSTREAM_HEADERS`
-("Name: Value; …"), `NOTARY_ADDR` (default `127.0.0.1:7047`), `PRICE`, `NOTARY_SEED`
-(only to expose `/notary/pubkey`), `RPC_URL`, `MPP_SECRET_KEY`, `RESELLER_MODE`.
+Env knobs (from `.env` or the environment): `UPSTREAM_HOST` (required),
+`UPSTREAM_API_KEY`, `UPSTREAM_HEADERS` ("Name: Value; …"), `NOTARY_ADDR` (default
+`127.0.0.1:7047`), `PRICE`, `NOTARY_SEED` (only to expose `/notary/pubkey`),
+`RPC_URL`, `MPP_SECRET_KEY`, `RESELLER_MODE`.
 
 ## Status
 
