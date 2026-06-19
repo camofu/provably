@@ -1,29 +1,41 @@
 //! The **buyer** (a paying agent).
 //!
-//! Pays the reseller for a Claude message over MPP, then *verifies the proof* it
-//! gets back before trusting the output:
+//! Pays the reseller for a yes/no verdict over MPP, then *verifies the proof* it gets
+//! back before trusting the output. The harness is `leg0 -> verdict`: the seller calls
+//! Claude (leg0), then an interior node emits `1` if the answer starts with "yes", else
+//! `0`. The buyer checks:
 //!
-//!   1. the notary signature is valid and under the pinned key,
-//!   2. the bytes were attested as coming from `api.anthropic.com`,
-//!   3. the body actually delivered hashes to the notarized response digest
-//!      (this is what catches model substitution), and
-//!   4. the attestation is bound to the payment we just made.
+//!   1. the notary signature on leg0 is valid and under the pinned key,
+//!   2. leg0 was attested as coming from `api.anthropic.com`,
+//!   3. the leg bytes the seller shipped hash to the notarized response digest
+//!      (this is what catches model substitution),
+//!   4. re-running the interior transform over those bytes reproduces the committed
+//!      verdict digest, and the delivered verdict matches it, and
+//!   5. the attestation is bound to the payment we just made.
+//!
+//! The interior proof here is a toy: instead of a zk/TEE proof, the buyer re-runs its
+//! own copy of the public transform (from the `harness` crate) over the notarized leg
+//! bytes the seller ships in the materials sidecar.
 //!
 //! Run (after starting the notary + reseller from `tlsn/`):
 //!   cargo run --bin buyer
-//!   cargo run --bin buyer -- "summarize zkTLS in one line"
+//!   cargo run --bin buyer -- "Is the sky blue? Answer Yes or No."
 //!
 //! Env: RESELLER_URL (default http://localhost:3000), EXPECTED_UPSTREAM
 //! (default api.anthropic.com), NOTARY_PUBKEY (pin out-of-band; else fetched).
 
 use alloy::primitives::B256;
 use alloy::providers::{Provider, ProviderBuilder};
+use harness::{recompute, MANIFEST_ID, VERDICT_FN_ID};
 use mpp::client::{Fetch, TempoProvider};
 use mpp::{parse_receipt, PrivateKeySigner};
-use provably_core::{sha256_hex, Manifest};
-use provably_verifier::{verify, Expectation};
-use provably_mpp::{read_receipt_header, PROVABLY_RECEIPT_HEADER};
+use provably_core::{sha256_hex, InteriorProof, Manifest, NodeProof};
+use provably_verifier::{verify, Check, Expectation};
+use provably_mpp::{
+    materials_from_header, read_receipt_header, PROVABLY_MATERIALS_HEADER, PROVABLY_RECEIPT_HEADER,
+};
 use reqwest::Client;
+use std::collections::HashMap;
 use tempo_alloy::TempoNetwork;
 
 #[tokio::main]
@@ -36,7 +48,7 @@ async fn main() {
         std::env::var("EXPECTED_UPSTREAM").unwrap_or_else(|_| "api.anthropic.com".to_string());
     let prompt = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| "In one sentence, what is the Machine Payments Protocol?".to_string());
+        .unwrap_or_else(|| "Is the sky blue? Begin your answer with Yes or No.".to_string());
 
     // Wallet — funded from the testnet faucet so it can pay.
     let signer = PrivateKeySigner::random();
@@ -74,7 +86,7 @@ async fn main() {
     };
 
     let payload = serde_json::json!({
-        "model": "claude-opus-4-8",
+        "model": "claude-haiku-4-5-20251001",
         "max_tokens": 256,
         "messages": [{ "role": "user", "content": prompt }],
     });
@@ -96,6 +108,7 @@ async fn main() {
     let status = resp.status();
     let receipt_hdr = header(&resp, "payment-receipt");
     let bundle_hdr = header(&resp, PROVABLY_RECEIPT_HEADER);
+    let materials_hdr = header(&resp, PROVABLY_MATERIALS_HEADER);
     let body = resp.bytes().await.expect("read body");
 
     println!("status: {status}\n");
@@ -104,10 +117,18 @@ async fn main() {
         return;
     }
 
-    // What we were actually served (so substitution is visible to the eye too).
-    if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&body) {
-        println!("served model : {}", v["model"]);
-        println!("served text  : {}\n", v["content"][0]["text"]);
+    // The product is the verdict (1/0). The full upstream answer rides in the materials
+    // sidecar so we can re-run the transform; show it too (substitution is then visible).
+    let materials = materials_hdr
+        .as_deref()
+        .map(materials_from_header)
+        .expect("missing materials header")
+        .expect("malformed materials header");
+    println!("verdict      : {}", String::from_utf8_lossy(&body));
+    if let Some(answer) = materials.get("leg0") {
+        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(answer) {
+            println!("upstream ans : {}\n", v["content"][0]["text"]);
+        }
     }
 
     let receipt = receipt_hdr
@@ -123,12 +144,56 @@ async fn main() {
         .expect("malformed provably receipt");
 
     // The verification that replaces trust. The buyer pins the manifest it expects:
-    // a single-leg passthrough from `expected_upstream`.
+    // this seller's harness, with leg0 from `expected_upstream`.
     let manifest = Manifest {
-        id: "passthrough-llm-v1".into(),
+        id: MANIFEST_ID.into(),
         hosts: vec![expected_upstream.clone()],
     };
     let served_digest = sha256_hex(&body);
+
+    // Re-run the interior transform ourselves. First confirm each shipped material is the
+    // genuine committed bytes — for leg0 that digest is the notary-attested one (verify()
+    // checks that separately), so this ties our re-run input to the real upstream answer.
+    // A reseller that fed its computation substituted bytes is caught right here.
+    let committed: HashMap<&str, &str> = harness_receipt
+        .nodes
+        .iter()
+        .map(|n| (n.id.as_str(), n.output_digest.as_str()))
+        .collect();
+    let mut material_checks: Vec<Check> = Vec::new();
+    let mut trusted: HashMap<&str, &[u8]> = HashMap::new();
+    for (id, bytes) in &materials {
+        let ok = committed
+            .get(id.as_str())
+            .map(|d| *d == sha256_hex(bytes).as_str())
+            .unwrap_or(false);
+        material_checks.push(Check {
+            name: format!("material {id} matches committed digest"),
+            passed: ok,
+        });
+        if ok {
+            trusted.insert(id.as_str(), bytes.as_slice());
+        }
+    }
+
+    // Re-run each interior Recompute node over its (trusted) inputs and record the digest
+    // for the verifier to bind against the node's committed output.
+    let mut recomputed: Vec<(String, String)> = Vec::new();
+    for node in &harness_receipt.nodes {
+        if let NodeProof::Interior(InteriorProof::Recompute { fn_id }) = &node.proof {
+            let inputs: Option<Vec<&[u8]>> = node
+                .inputs
+                .iter()
+                .map(|i| trusted.get(i.as_str()).copied())
+                .collect();
+            if let Some(inputs) = inputs {
+                if let Some(out) = recompute(fn_id, &inputs) {
+                    recomputed.push((node.id.clone(), sha256_hex(&out)));
+                }
+            }
+        }
+    }
+
     let checks = verify(
         &harness_receipt,
         &Expectation {
@@ -137,25 +202,27 @@ async fn main() {
             served_output_digest: &served_digest,
             payment_reference: &receipt.reference,
             served_request_digest: Some(&request_digest),
-            recomputed: &[],
+            recomputed: &recomputed,
         },
     );
 
     println!("\nproof verification:");
-    for c in &checks {
+    let all: Vec<&Check> = material_checks.iter().chain(checks.iter()).collect();
+    for c in &all {
         println!("  {} {}", if c.passed { "[PASS]" } else { "[FAIL]" }, c.name);
     }
 
-    if checks.iter().all(|c| c.passed) {
+    if all.iter().all(|c| c.passed) {
         println!(
-            "\n✅ VERIFIED — output provably served by {expected_upstream}, bound to payment {}.",
+            "\n✅ VERIFIED — verdict provably computed by `{VERDICT_FN_ID}` over the notarized \
+             {expected_upstream} answer, bound to payment {}.",
             receipt.reference
         );
     } else {
         println!(
-            "\n❌ REJECTED — proof failed. The reseller did not deliver the notarized \
-             upstream bytes (model substitution / tampering). Do not trust this output; \
-             dispute the payment or slash the reseller's bond."
+            "\n❌ REJECTED — proof failed. The verdict was not provably computed from the \
+             notarized upstream answer (model substitution / tampering). Do not trust this \
+             output; dispute the payment or slash the reseller's bond."
         );
     }
 }

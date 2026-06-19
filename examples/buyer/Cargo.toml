@@ -13,6 +13,7 @@ mpp = { workspace = true, features = ["client"] }
 provably-core = { workspace = true }
 provably-verifier = { workspace = true }
 provably-mpp = { workspace = true }
+harness = { workspace = true }
 
 alloy = { workspace = true }
 tempo-alloy = { workspace = true }
