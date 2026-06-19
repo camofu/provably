@@ -24,6 +24,10 @@ pub struct Expectation<'a> {
     pub served_output_digest: &'a str,
     /// The MPP receipt reference the bundle must be bound to.
     pub payment_reference: &'a str,
+    /// SHA-256 (hex) of the request the buyer sent. When set, the verifier checks
+    /// the output leg answered *this* request — catching a reseller that asked the
+    /// upstream a different (e.g. cheaper) question. `None` = don't bind the request.
+    pub served_request_digest: Option<&'a str>,
     /// For `Recompute` interior nodes: `(node_id, digest)` the buyer obtained by
     /// re-running the transform.
     pub recomputed: &'a [(NodeId, String)],
@@ -69,6 +73,17 @@ pub fn verify(receipt: &HarnessReceipt, expect: &Expectation) -> Vec<Check> {
         "bound to this payment",
         receipt.payment_reference.as_deref() == Some(expect.payment_reference),
     ));
+
+    // Request binding: the leg that produced the sold output answered THE BUYER's
+    // request — not a different (e.g. cheaper) one the reseller swapped in upstream.
+    // Only checked when the buyer supplies the digest of the request it actually sent.
+    if let Some(expected_req) = expect.served_request_digest {
+        let bound = match map.get(receipt.output_node.as_str()).map(|n| &n.proof) {
+            Some(NodeProof::Leg(att)) => att.claim.request_digest.as_str() == expected_req,
+            _ => false,
+        };
+        checks.push(Check::new("output answers the buyer's request", bound));
+    }
 
     // Walk every node.
     for node in &receipt.nodes {
