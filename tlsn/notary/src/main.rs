@@ -194,20 +194,18 @@ async fn notarize_session(prover_stream: TcpStream, cfg: Arc<Config>) -> Result<
     let (method, path) = request_line(sent);
     let status = status_code(received);
 
-    // Digest the *bodies* (matching how the reseller/buyer hash the payload they
-    // exchange), not the full HTTP framing. CONTRACT, not optional: this naive
-    // "after the first blank line" split only equals the bytes the reseller
-    // delivers to the buyer when the prover forces `Accept-Encoding: identity`
-    // (tlsn does not support compression) AND the response is not chunked. The
-    // prover wiring must guarantee that, or this notary must instead parse via
-    // tlsn-formats `HttpTranscript` and de-chunk. Until then a chunked/compressed
-    // upstream will make the buyer's "output == leg response" check fail.
+    // Digest the *decoded* HTTP bodies — the bytes the reseller delivers and the
+    // buyer hashes — not the on-wire framing. A `Transfer-Encoding: chunked`
+    // response must be de-chunked first so this digest matches the (de-chunked)
+    // body a hyper client hands on; the prover forces `Accept-Encoding: identity`,
+    // so there is no compression to undo. (Request bodies aren't chunked, but
+    // `decoded_body` handles them either way.)
     let claim = LegClaim {
         host: host.clone(),
         method,
         path,
-        request_digest: sha256_hex(http_body(sent)),
-        response_digest: sha256_hex(http_body(received)),
+        request_digest: sha256_hex(&decoded_body(sent)),
+        response_digest: sha256_hex(&decoded_body(received)),
         response_status: status,
         timestamp: witnessed_time.to_string(),
     };
@@ -238,12 +236,52 @@ async fn notarize_session(prover_stream: TcpStream, cfg: Arc<Config>) -> Result<
     Ok(())
 }
 
-/// Body bytes after the first blank line; falls back to the whole buffer.
-fn http_body(buf: &[u8]) -> &[u8] {
-    buf.windows(4)
+/// The decoded HTTP body: bytes after the headers, de-chunked when the message used
+/// `Transfer-Encoding: chunked`. This matches what a hyper client (the reseller)
+/// hands on, which is what the buyer hashes.
+fn decoded_body(buf: &[u8]) -> Vec<u8> {
+    let split = buf
+        .windows(4)
         .position(|w| w == b"\r\n\r\n")
-        .map(|i| &buf[i + 4..])
-        .unwrap_or(buf)
+        .map(|i| i + 4)
+        .unwrap_or(0);
+    let (head, body) = buf.split_at(split);
+    if header_is_chunked(head) {
+        dechunk(body)
+    } else {
+        body.to_vec()
+    }
+}
+
+/// True if the header block declares `Transfer-Encoding: chunked` (case-insensitive).
+fn header_is_chunked(head: &[u8]) -> bool {
+    String::from_utf8_lossy(head)
+        .to_ascii_lowercase()
+        .lines()
+        .any(|l| l.starts_with("transfer-encoding:") && l.contains("chunked"))
+}
+
+/// Decode an HTTP/1.1 chunked body into the concatenated chunk data.
+fn dechunk(mut body: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(body.len());
+    while let Some(nl) = body.windows(2).position(|w| w == b"\r\n") {
+        // Chunk size is hex, before any ";extension".
+        let hex = body[..nl].split(|&b| b == b';').next().unwrap_or(&body[..nl]);
+        let size = std::str::from_utf8(hex)
+            .ok()
+            .and_then(|s| usize::from_str_radix(s.trim(), 16).ok())
+            .unwrap_or(0);
+        body = &body[nl + 2..];
+        if size == 0 || body.len() < size {
+            break;
+        }
+        out.extend_from_slice(&body[..size]);
+        body = &body[size..];
+        if body.starts_with(b"\r\n") {
+            body = &body[2..];
+        }
+    }
+    out
 }
 
 /// `(method, path)` parsed from the HTTP request line.
