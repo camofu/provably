@@ -2,6 +2,7 @@
 name = "provably-prover"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 publish = false
 description = "Interior node provers: the Prover trait + Recompute (zkVM/inference/TEE next)."
 

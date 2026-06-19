@@ -8,6 +8,10 @@
 resolver = "2"
 members = ["notary", "reseller"]
 
+[workspace.package]
+license = "MIT OR Apache-2.0"
+edition = "2021"
+
 [workspace.dependencies]
 # Pinned to a known-good revision: tlsn is pre-1.0 alpha and its API shifts between
 # releases (v0.1.0-alpha.16-pre at this rev). Shared so both members build it once.
