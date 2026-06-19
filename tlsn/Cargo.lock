@@ -3511,11 +3511,11 @@ dependencies = [
 
 [[package]]
 name = "mpp"
-version = "0.10.4"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23a456deac1d9ca530f3668e13b109ae5cf423b5c52d1d683384759df6d20b2d"
 dependencies = [
  "alloy",
- "alloy-sol-type-parser",
- "alloy-sol-types",
  "async-stream",
  "base64 0.22.1",
  "futures-core",
@@ -3528,9 +3528,7 @@ dependencies = [
  "serde_json",
  "serde_json_canonicalizer",
  "sha2 0.11.0",
- "subtle",
  "tempo-alloy",
- "tempo-contracts",
  "tempo-primitives",
  "thiserror 2.0.18",
  "time",

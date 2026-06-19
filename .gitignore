@@ -20,3 +20,7 @@ target
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 .env
+
+# Local cargo overrides (e.g. a maintainer's `paths = ["../mpp-rs"]` override) — keep
+# the committed manifests pointing at crates.io so a fresh clone builds.
+.cargo/
