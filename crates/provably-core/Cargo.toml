@@ -2,6 +2,7 @@
 name = "provably-core"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 publish = false
 description = "API-agnostic proof interface: leg attestations, harness receipts, the verifier."
 

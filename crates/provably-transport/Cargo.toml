@@ -2,6 +2,7 @@
 name = "provably-transport"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 publish = false
 description = "Leg attesters: the Attester trait + backends (notary today; zkTLS/TEE next)."
 

@@ -2,6 +2,7 @@
 name = "provably-mpp"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 publish = false
 description = "Conventions binding a HarnessReceipt to MPP settlement: advertise, attach, gate."
 

@@ -17,6 +17,11 @@ members = [
 #   cd tlsn && cargo build
 exclude = ["tlsn"]
 
+# Shared package metadata inherited by every member via `*.workspace = true`.
+[workspace.package]
+license = "MIT OR Apache-2.0"
+edition = "2021"
+
 # A provable reseller harness built on the Machine Payments Protocol (MPP).
 #
 # `mpp` is the published crate (https://crates.io/crates/mpp), so a fresh clone builds
