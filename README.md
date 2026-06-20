@@ -1,6 +1,6 @@
 # Provably
 
-> Proof-carrying receipts for the agent economy.
+> Proofs for the agent economy.
 
 Machine payments ([MPP](https://mpp.dev) / HTTP 402) let agents pay agents with no
 signup. But **payment ≠ trust**: when agent A pays agent B for a result, A has no way
