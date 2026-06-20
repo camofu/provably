@@ -3,18 +3,48 @@
 > Proof-carrying receipts for the agent economy.
 
 Machine payments ([MPP](https://mpp.dev) / HTTP 402) let agents pay agents with no
-signup. But **payment ≠ trust**: when agent A pays agent B for a result, A can't
-verify *what it bought* — B could quietly swap a cheap model for the premium one it
-billed for (model-substitution fraud), fabricate the answer, or skip the work.
+signup. But **payment ≠ trust**: when agent A pays agent B for a result, A has no way
+to check *what it actually bought*. B is a black box — it could swap a cheap model for
+the premium one it billed for, fabricate the answer, skip steps, or tamper with its own
+intermediate results, and the payment receipt looks identical either way. This is the
+general problem of a **malicious (or merely buggy) paid agent**.
 
-**Provably** attaches a verifiable **proof of how the result was produced** to the MPP
-payment receipt. The seller's harness proves the response genuinely came from the
-upstream it claims (e.g. `api.anthropic.com`, unmodified); the buyer **verifies that
-proof before trusting the output** — catching fraud without trusting the seller.
+**Provably** is infrastructure for **verifiable computation in the agent economy**: it
+attaches a **proof of how a result was produced** to the payment, so the buyer can
+verify it before trusting the output — without trusting the seller.
+
+A seller's work is modeled as a **harness** — a DAG whose **leg** nodes are external
+calls (a paid LLM API query being the canonical one) and whose **interior** nodes are
+the harness's own computation over them. The graph can mix many kinds of legs and nodes;
+Provably makes the whole thing checkable end to end. Every external call is
+**transport-attested** — the bytes genuinely came from the host it claims, unmodified —
+and every interior step is verifiable by the buyer. The buyer
+re-derives the chain and verifies it, catching *any* deviation from the declared harness.
+Model-substitution fraud is just one case it rules out.
 
 The transport proof is real **[TLSNotary](https://tlsnotary.org)** (proxy mode): a
 separate notary process witnesses the seller's TLS session to the upstream and signs
 what crossed the wire. Settlement is real MPP on the Tempo `moderato` testnet.
+
+**What it does and doesn't buy you.** The proof replaces trust for *execution* — these
+bytes came from this host, unmodified, run through exactly this computation — not for
+answer *quality*. And it can't stop **indirect prompt injection**: if a harness step
+pulls a poisoned prompt off the web, the proof faithfully attests that the poison was
+incorporated. It makes the malicious input *attributable*, not impossible.
+
+## Insurable work
+
+A proof the buyer can verify is also one a *neutral third party* can verify. The receipt
+is portable and checks deterministically — `verify()` returns the same pass/fail for
+anyone who runs it, contract or human. That turns "trust me" into objective, adjudicable
+evidence, which is the missing ingredient for primitives that simply weren't possible
+when the result was an unverifiable black box:
+
+- **Escrow / fair exchange** — release funds only against a receipt that verifies.
+- **Bonding & slashing** — the seller posts a bond; a failed receipt is slashing
+  evidence a smart contract can check, no court needed.
+- **Insurance** — an underwriter can price a seller's risk and settle claims against
+  cryptographic evidence rather than he-said-she-said disputes.
 
 ## Architecture
 
@@ -24,9 +54,14 @@ A harness's output is described by a **`HarnessReceipt`** — a DAG of nodes:
 - **interior** nodes = the harness's own computation (`Recompute` today — the verifier
   re-runs a public transform; zkVM / proof-of-inference / TEE later),
 
-wired by `inputs` (edges) and bound together by **digest-equality**. The receipt is
-bound to the MPP payment via the payment reference, and the buyer checks it against a
-pinned **`Manifest`** (which hosts are allowed, which harness spec). Today's harness is a
+wired by `inputs` (edges) and, today, **bound together by digest-equality** (each node
+commits to the SHA-256 of its output; the verifier checks the chain lines up, alongside
+the leg signature and each interior recompute). That's the status-quo binding — a future
+backend could instead verify the leg's zkTLS proof *inside the same zkVM that proves the
+DAG*, collapsing the whole receipt to one recursive proof; the type model leaves room
+for it but doesn't yet build it. The receipt is bound to the MPP payment via the payment
+reference, and the buyer checks it against a pinned **`Manifest`** (which hosts are
+allowed, which harness spec). Today's harness is a
 two-node DAG: a notarized upstream call (`leg0`) feeding an interior **`verdict`** node —
 `1` if the answer starts with "yes", else `0` — which the buyer re-runs to verify. The
 sold output is the verdict; the seller ships `leg0`'s bytes alongside it so the buyer can
@@ -51,7 +86,7 @@ The framework is split so the proof layer is payment- and backend-agnostic:
 
 | Crate | Role |
 |---|---|
-| `provably-core` | The IP: `LegClaim`/`LegAttestation`, `Node`/`HarnessReceipt`, `Manifest`, `sha256_hex`. Types only — no payment, transport, proving, or verification backend. |
+| `provably-core` | `LegClaim`/`LegAttestation`, `Node`/`HarnessReceipt`, `Manifest`, `sha256_hex`. Types only — no payment, transport, proving, or verification backend. |
 | `provably-verifier` | The verifier: `verify()` + the `Expectation`/`Check` types (Ed25519 + digest checks). |
 | `provably-transport` | The notary's Ed25519 signing identity (`Notary`); the signature is verified in `provably-verifier`. |
 | `provably-prover` | Interior provers behind a `Prover` trait — `Recompute` today; zkVM/inference/TEE next. |
