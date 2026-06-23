@@ -24,3 +24,6 @@ target
 # Local cargo overrides (e.g. a maintainer's `paths = ["../mpp-rs"]` override) — keep
 # the committed manifests pointing at crates.io so a fresh clone builds.
 .cargo/
+
+# Local Claude Code working dir (worktrees, session state) — not part of the repo.
+.claude/
