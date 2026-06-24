@@ -24,8 +24,8 @@ Needs the notary running and a real TLS upstream. Config (`UPSTREAM_*`) is read 
 a `.env` file at the repo root — copy `.env.example` to `.env` and fill in your key.
 
 ```bash
-# terminal 1: the notary
-cd tlsn/notary && cargo run
+# terminal 1: the notary (UPSTREAM_HOST is required; the notary does not read .env)
+cd tlsn/notary && UPSTREAM_HOST=api.anthropic.com cargo run
 
 # terminal 2: the reseller-prover (UPSTREAM_* loaded from the repo .env)
 cd tlsn/reseller && cargo run
