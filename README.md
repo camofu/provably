@@ -144,7 +144,7 @@ cd tlsn/notary && UPSTREAM_HOST=api.anthropic.com cargo run
 cd tlsn/reseller && cargo run
 
 # 3. the buyer: pays, then verifies the proof (core workspace)
-cargo run --bin buyer -- "Is the Eiffel Tower in Paris? Answer Yes or No."
+cargo run --bin buyer -- "Is the Eiffel Tower in Paris? Begin your answer with Yes or No."
 ```
 
 An honest run passes every check; the buyer prints the verdict (`1`/`0`), the upstream
