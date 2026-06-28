@@ -19,7 +19,7 @@
 //!
 //! Run (after starting the notary + reseller from `tlsn/`):
 //!   cargo run --bin buyer
-//!   cargo run --bin buyer -- "Is the sky blue? Answer Yes or No."
+//!   cargo run --bin buyer -- "Is the sky blue? Begin your answer with Yes or No."
 //!
 //! Env: RESELLER_URL (default http://localhost:3000), EXPECTED_UPSTREAM
 //! (default api.anthropic.com), NOTARY_PUBKEY (pin out-of-band; else fetched).
