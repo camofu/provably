@@ -26,6 +26,13 @@ use sha2::{Digest, Sha256};
 const DOMAIN: &[u8] = b"provably/leg-attestation/v1";
 
 /// SHA-256 of `bytes`, lowercase hex. The one canonical digest used everywhere.
+///
+/// ```
+/// assert_eq!(
+///     provably_core::sha256_hex(b""),
+///     "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+/// );
+/// ```
 pub fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
